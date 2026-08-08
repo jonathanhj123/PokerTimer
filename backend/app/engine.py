@@ -126,3 +126,79 @@ class TournamentState:
         if seconds < 0:
             raise EngineError("Time cannot be negative")
         self.seconds_remaining = seconds
+
+    # --- structure editing --------------------------------------------
+    def _check_index(self, index: int) -> None:
+        if not 0 <= index < len(self.structure):
+            raise EngineError("Invalid entry index")
+
+    def _advance_or_park(self) -> None:
+        if self.current_index + 1 < len(self.structure):
+            self.current_index += 1
+            self.seconds_remaining = self.structure[self.current_index]["minutes"] * 60
+        else:
+            self.seconds_remaining = 0
+
+    def update_entry(self, index: int, entry: dict) -> None:
+        self._check_index(index)
+        if index == self.current_index and self.status in ("running", "paused"):
+            elapsed = self.structure[index]["minutes"] * 60 - self.seconds_remaining
+            self.structure[index] = entry
+            new_remaining = entry["minutes"] * 60 - elapsed
+            if new_remaining <= 0:
+                self._advance_or_park()
+            else:
+                self.seconds_remaining = new_remaining
+        else:
+            self.structure[index] = entry
+
+    def insert_entry(self, index: int, entry: dict) -> None:
+        if not 0 <= index <= len(self.structure):
+            raise EngineError("Invalid entry index")
+        self.structure.insert(index, entry)
+        if self.status != "setup" and index <= self.current_index:
+            self.current_index += 1
+
+    def delete_entry(self, index: int) -> None:
+        self._check_index(index)
+        if len(self.structure) == 1:
+            raise EngineError("Cannot delete the only entry")
+        del self.structure[index]
+        if self.status == "setup":
+            self.current_index = 0
+            return
+        if index < self.current_index:
+            self.current_index -= 1
+        elif index == self.current_index:
+            if self.current_index >= len(self.structure):
+                # deleted the final entry while on it: park on the new last
+                self.current_index = len(self.structure) - 1
+                self.seconds_remaining = 0
+            else:
+                # spec: jump to the start of the entry that slid into this slot
+                self.seconds_remaining = (
+                    self.structure[self.current_index]["minutes"] * 60)
+
+    def move_entry(self, from_index: int, to_index: int) -> None:
+        self._check_index(from_index)
+        if not 0 <= to_index < len(self.structure):
+            raise EngineError("Invalid entry index")
+        entry = self.structure.pop(from_index)
+        self.structure.insert(to_index, entry)
+        if self.status == "setup":
+            return
+        if from_index == self.current_index:
+            self.current_index = to_index
+        elif from_index < self.current_index <= to_index:
+            self.current_index -= 1
+        elif to_index <= self.current_index < from_index:
+            self.current_index += 1
+
+    def load_structure(self, structure: list[dict]) -> None:
+        if self.status != "setup":
+            raise EngineError("Templates can only be loaded during setup")
+        if not structure:
+            raise EngineError("Structure cannot be empty")
+        self.structure = [dict(entry) for entry in structure]
+        self.current_index = 0
+        self.seconds_remaining = 0
