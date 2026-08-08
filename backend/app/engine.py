@@ -202,3 +202,111 @@ class TournamentState:
         self.structure = [dict(entry) for entry in structure]
         self.current_index = 0
         self.seconds_remaining = 0
+
+    # --- settings ------------------------------------------------------
+    def set_config(self, *, buy_in: Decimal | None = None,
+                   currency: str | None = None,
+                   starting_stack: int | None = None,
+                   early_bird_bonus: int | None = None) -> None:
+        if buy_in is not None:
+            if buy_in < 0:
+                raise EngineError("Buy-in cannot be negative")
+            self.buy_in = buy_in
+        if currency is not None:
+            currency = currency.strip()
+            if not 1 <= len(currency) <= 5:
+                raise EngineError("Currency must be 1-5 characters")
+            self.currency = currency
+        if starting_stack is not None:
+            if starting_stack < 0:
+                raise EngineError("Starting stack cannot be negative")
+            self.starting_stack = starting_stack
+        if early_bird_bonus is not None:
+            if early_bird_bonus < 0:
+                raise EngineError("Early-bird bonus cannot be negative")
+            self.early_bird_bonus = early_bird_bonus
+
+    def set_counts(self, *, total_entries: int | None = None,
+                   players_remaining: int | None = None,
+                   early_bird_count: int | None = None) -> None:
+        for name, value in (("total_entries", total_entries),
+                            ("players_remaining", players_remaining),
+                            ("early_bird_count", early_bird_count)):
+            if value is None:
+                continue
+            if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+                raise EngineError(f"{name} must be a non-negative whole number")
+            setattr(self, name, value)
+
+    def set_payouts(self, percentages: list[int]) -> None:
+        if not percentages:
+            raise EngineError("At least one paid place is required")
+        for pct in percentages:
+            if isinstance(pct, bool) or not isinstance(pct, int) or pct < 1:
+                raise EngineError("Each percentage must be a whole number of at least 1")
+        if sum(percentages) != 100:
+            raise EngineError(f"Percentages must sum to 100 (currently {sum(percentages)})")
+        self.payout_percentages = list(percentages)
+
+    # --- serialization -------------------------------------------------
+    def to_dict(self) -> dict:
+        return {
+            "status": self.status,
+            "structure": [dict(entry) for entry in self.structure],
+            "current_index": self.current_index,
+            "seconds_remaining": self.seconds_remaining,
+            "buy_in": str(self.buy_in),
+            "currency": self.currency,
+            "total_entries": self.total_entries,
+            "players_remaining": self.players_remaining,
+            "starting_stack": self.starting_stack,
+            "early_bird_bonus": self.early_bird_bonus,
+            "early_bird_count": self.early_bird_count,
+            "payout_percentages": list(self.payout_percentages),
+            "computed": self._computed(),
+        }
+
+    def _computed(self) -> dict:
+        pool = compute_prize_pool(self.total_entries, self.buy_in)
+        chips = compute_chips_in_play(self.total_entries, self.starting_stack,
+                                      self.early_bird_count, self.early_bird_bonus)
+        current = self.structure[self.current_index] if self.structure else None
+        next_entry = (self.structure[self.current_index + 1]
+                      if self.current_index + 1 < len(self.structure) else None)
+        next_blinds = next(
+            (entry for entry in self.structure[self.current_index + 1:]
+             if entry["type"] == LEVEL), None)
+        level_number = None
+        if current is not None and current["type"] == LEVEL:
+            level_number = sum(
+                1 for entry in self.structure[: self.current_index + 1]
+                if entry["type"] == LEVEL)
+        return {
+            "prize_pool": str(pool),
+            "payouts": [str(p) for p in compute_payouts(pool, self.payout_percentages)],
+            "chips_in_play": chips,
+            "average_stack": compute_average_stack(chips, self.players_remaining),
+            "current_entry": current,
+            "next_entry": next_entry,
+            "next_blinds": next_blinds,
+            "level_number": level_number,
+            "is_final_entry": (bool(self.structure)
+                               and self.current_index == len(self.structure) - 1),
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict) -> "TournamentState":
+        return cls(
+            status=data["status"],
+            structure=[dict(entry) for entry in data["structure"]],
+            current_index=data["current_index"],
+            seconds_remaining=data["seconds_remaining"],
+            buy_in=Decimal(data["buy_in"]),
+            currency=data["currency"],
+            total_entries=data["total_entries"],
+            players_remaining=data["players_remaining"],
+            starting_stack=data["starting_stack"],
+            early_bird_bonus=data["early_bird_bonus"],
+            early_bird_count=data["early_bird_count"],
+            payout_percentages=list(data["payout_percentages"]),
+        )
