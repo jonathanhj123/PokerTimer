@@ -137,3 +137,25 @@ def test_falsy_non_dict_payload_is_rejected_not_silently_coerced(client):
         admin.send_json({"type": "command", "action": "start", "payload": {}})
         follow_up = admin.receive_json()
     assert follow_up["state"]["status"] == "running"
+
+
+# --- Round 3 Minor #1: an oversized JSON integer must not kill the socket -
+
+def test_oversized_json_integer_gets_error_reply_not_disconnect(client):
+    # Python's int() has a 4300-digit conversion limit; json.loads on a
+    # frame containing a number with more digits than that raises a plain
+    # ValueError, not json.JSONDecodeError, so it wasn't caught by the
+    # previous `except (json.JSONDecodeError, KeyError)`.
+    seed_structure()
+    huge_number = "9" * 5000
+    with client.websocket_connect("/ws") as websocket:
+        websocket.receive_json()
+        websocket.send_text(
+            '{"type": "command", "action": "start", "index": ' + huge_number + '}')
+        reply = websocket.receive_json()
+        assert reply == {"type": "error", "message": "Invalid message"}
+
+        # connection must still be alive and processing further messages
+        websocket.send_json({"type": "command", "action": "start", "payload": {}})
+        follow_up = websocket.receive_json()
+    assert follow_up["type"] == "error"  # anonymous, not authorized — but no crash

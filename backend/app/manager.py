@@ -17,6 +17,14 @@ def _require_int(payload: dict, key: str, *, allow_negative: bool = False) -> in
         raise EngineError(f"{key} must be a whole number")
     if not allow_negative and value < 0:
         raise EngineError(f"{key} cannot be negative")
+    # Mirrors _parse_decimal's magnitude bound: an unbounded int (e.g. a
+    # 4000-digit total_entries) gets committed to the DB and makes every
+    # subsequent to_dict() do 4000-digit arithmetic. A billion is comically
+    # beyond any realistic player count, chip stack, or index. Plain ints
+    # don't have Decimal's context-bound abs() overflow hazard, so a normal
+    # abs() is safe here.
+    if abs(value) > 1_000_000_000:
+        raise EngineError(f"{key} is too large")
     return value
 
 
@@ -104,9 +112,15 @@ class TournamentManager:
             # so leaving the socket open would leave a "zombie" connection
             # that never prompts the browser to reconnect. A socket that's
             # already wedged might not close cleanly either — that must not
-            # raise past this point.
+            # raise past this point. It also must not HANG: close() is
+            # routed through the same ASGI send channel as send_json, so
+            # the exact client being pruned for a stalled send can also
+            # stall on close() — and since this all runs inside self.lock
+            # (via tick_once/handle_command), an unbounded close() would
+            # re-freeze the clock for every other client. Reuse the same
+            # timeout budget already used for sends.
             try:
-                await websocket.close()
+                await asyncio.wait_for(websocket.close(), timeout=self.broadcast_timeout)
             except Exception:
                 pass
 
@@ -117,7 +131,14 @@ class TournamentManager:
             # Same rollback discipline as handle_command below: if tick() or
             # persist() fails partway, self.state must not be left poisoned
             # in memory for every subsequent handshake/broadcast/tick.
-            snapshot = self.state.to_dict()
+            try:
+                snapshot = self.state.to_dict()
+            except Exception:
+                # Defense-in-depth: not reachable today given self.state is
+                # kept serializable elsewhere, but if it ever weren't, the
+                # snapshot call itself must not kill the ticker.
+                logger.exception("Failed to snapshot state before tick")
+                return
             try:
                 event = self.state.tick()
                 self.persist()
@@ -150,7 +171,17 @@ class TournamentManager:
             # fields), self.state must be rolled back too, or the poisoned
             # value survives in memory even though nothing was committed to
             # the DB (SQLAlchemy only commits on persist()'s last line).
-            snapshot = self.state.to_dict()
+            try:
+                snapshot = self.state.to_dict()
+            except Exception:
+                # Defense-in-depth: not reachable today given self.state is
+                # kept serializable elsewhere, but if it ever weren't, the
+                # snapshot call itself must not kill the connection.
+                logger.exception("Failed to snapshot state before command")
+                await self._send_with_timeout(
+                    websocket, {"type": "error", "message": "Invalid command"},
+                    timeout=self.broadcast_timeout)
+                return
             try:
                 self._apply(action, payload or {})
                 self.persist()
@@ -185,8 +216,19 @@ class TournamentManager:
                 template = storage.get_template(session, template_id)
             if template is None:
                 return False
-            self.state.load_structure(template["structure"])
-            self.persist()
+            # Same rollback discipline as handle_command/tick_once: an
+            # EngineError from load_structure() itself never mutates state
+            # (engine.py validates status/non-empty before assigning), but a
+            # persist() failure after a successful load_structure() call
+            # must not leave the new structure poisoned in memory while
+            # nothing was actually committed to the DB.
+            snapshot = self.state.to_dict()
+            try:
+                self.state.load_structure(template["structure"])
+                self.persist()
+            except Exception:
+                self.state = TournamentState.from_dict(snapshot)
+                raise
             await self.broadcast()
             return True
 

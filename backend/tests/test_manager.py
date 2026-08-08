@@ -349,3 +349,79 @@ def test_stalled_error_reply_does_not_block_lock_for_other_commands(clean_db):
     assert manager.state.status == "running"
     assert second_client.sent[-1]["type"] == "state"
     assert second_client.sent[-1]["state"]["status"] == "running"
+
+
+# --- Round 3 Important: a wedged close() must not re-freeze the lock -----
+
+def test_hanging_close_is_pruned_instead_of_blocking_broadcast(clean_db):
+    # Round 2's own fix added a best-effort `await websocket.close()` for
+    # pruned clients, but left it unbounded. A client whose send_json is
+    # stalled can also stall on close() (Starlette routes both through the
+    # same ASGI send channel) — and since this all runs inside self.lock,
+    # that would re-freeze the clock for every other client.
+    class DoubleHangingWebSocket:
+        def __init__(self):
+            self.closed = False
+
+        async def send_json(self, data):
+            await asyncio.sleep(999)
+
+        async def close(self):
+            await asyncio.sleep(999)
+            self.closed = True
+
+    manager = make_manager()
+    manager.broadcast_timeout = 0.05
+    hanging, alive = DoubleHangingWebSocket(), FakeWebSocket()
+    manager.clients = [hanging, alive]
+
+    # If close() were still unbounded, this would hang on the 999s sleep
+    # instead of returning promptly — wrap in an outer timeout well under
+    # the hang duration so a regression fails fast instead of hanging.
+    asyncio.run(asyncio.wait_for(manager.broadcast(), timeout=1))
+
+    assert manager.clients == [alive]
+    assert alive.sent[-1]["type"] == "state"
+    # The close() attempt was made but never completed (it's still hung) —
+    # only send_json's timeout-and-prune behavior is under test here, not
+    # whether close() itself ever finishes.
+    assert hanging.closed is False
+
+
+# --- Round 3 Minor #2: _require_int needs an upper bound, like _parse_decimal -
+
+def test_set_counts_rejects_absurdly_large_total_entries(clean_db):
+    manager = make_manager()
+    admin = FakeWebSocket()
+    original_total_entries = manager.state.total_entries
+
+    asyncio.run(manager.handle_command(
+        admin, "set_counts", {"total_entries": 10**12}))
+
+    assert admin.sent[-1]["type"] == "error"
+    assert manager.state.total_entries == original_total_entries
+
+
+# --- Round 3 Minor #4: load_template must roll back a persist() failure --
+
+def test_load_template_rolls_back_structure_on_persist_failure(clean_db, monkeypatch):
+    manager = make_manager()
+    original_structure = manager.state.structure
+
+    with SessionLocal() as session:
+        template_id = storage.create_template(
+            session, "New Structure", [level(100, 200)])["id"]
+        session.commit()
+
+    def failing_persist():
+        raise RuntimeError("db exploded")
+
+    monkeypatch.setattr(manager, "persist", failing_persist)
+
+    async def run():
+        with contextlib.suppress(RuntimeError):
+            await manager.load_template(template_id)
+
+    asyncio.run(run())
+
+    assert manager.state.structure == original_structure

@@ -1,5 +1,3 @@
-import json
-
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
 from . import auth
@@ -24,11 +22,15 @@ async def websocket_endpoint(websocket: WebSocket):
         while True:
             try:
                 message = await websocket.receive_json()
-            except (json.JSONDecodeError, KeyError):
+            except (ValueError, KeyError):
                 # Non-JSON text frame, or a binary frame (which lacks the
                 # "text" key receive_json expects) — e.g. a stray heartbeat
                 # ping. Reply with a diagnostic instead of killing the
-                # connection.
+                # connection. ValueError (broader than json.JSONDecodeError,
+                # which is itself a ValueError subclass) also catches a
+                # frame containing a JSON integer with more digits than
+                # Python's int() conversion limit, which json.loads raises
+                # as a plain ValueError rather than JSONDecodeError.
                 await websocket.send_json(_INVALID_MESSAGE)
                 continue
             if not isinstance(message, dict):
