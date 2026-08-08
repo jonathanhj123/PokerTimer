@@ -55,3 +55,61 @@ def test_engine_error_reaches_only_the_sender(client):
         reply = admin.receive_json()
     assert reply["type"] == "error"
     assert "pause" in reply["message"].lower() or "running" in reply["message"].lower()
+
+
+# --- Important #2: malformed frames must not kill the connection ---------
+
+def test_non_json_text_frame_gets_error_reply_not_disconnect(client):
+    seed_structure()
+    with client.websocket_connect("/ws") as websocket:
+        websocket.receive_json()
+        websocket.send_text("not json at all")
+        reply = websocket.receive_json()
+        assert reply == {"type": "error", "message": "Invalid message"}
+
+        # connection must still be alive and processing further messages
+        websocket.send_json({"type": "command", "action": "start", "payload": {}})
+        follow_up = websocket.receive_json()
+    assert follow_up["type"] == "error"  # anonymous, not authorized — but no crash
+
+
+def test_binary_frame_gets_error_reply_not_disconnect(client):
+    seed_structure()
+    with client.websocket_connect("/ws") as websocket:
+        websocket.receive_json()
+        websocket.send_bytes(b"\x00\x01\x02")
+        reply = websocket.receive_json()
+        assert reply == {"type": "error", "message": "Invalid message"}
+
+        websocket.send_json({"type": "command", "action": "start", "payload": {}})
+        follow_up = websocket.receive_json()
+    assert follow_up["type"] == "error"
+
+
+def test_json_array_top_level_message_gets_error_reply_not_disconnect(client):
+    seed_structure()
+    with client.websocket_connect("/ws") as websocket:
+        websocket.receive_json()
+        websocket.send_json([1, 2, 3])
+        reply = websocket.receive_json()
+        assert reply == {"type": "error", "message": "Invalid message"}
+
+        websocket.send_json({"type": "command", "action": "start", "payload": {}})
+        follow_up = websocket.receive_json()
+    assert follow_up["type"] == "error"
+
+
+def test_non_dict_payload_gets_error_reply_and_does_not_crash_dispatch(client):
+    seed_structure()
+    headers = login_cookie(client)
+    with client.websocket_connect("/ws", headers=headers) as admin:
+        admin.receive_json()
+        admin.send_json(
+            {"type": "command", "action": "start", "payload": [1, 2, 3]})
+        reply = admin.receive_json()
+        assert reply == {"type": "error", "message": "Invalid message"}
+
+        # connection must still be alive and able to run a real command
+        admin.send_json({"type": "command", "action": "start", "payload": {}})
+        follow_up = admin.receive_json()
+    assert follow_up["state"]["status"] == "running"

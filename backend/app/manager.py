@@ -1,4 +1,5 @@
 import asyncio
+import logging
 from decimal import Decimal, InvalidOperation
 
 from pydantic import ValidationError
@@ -6,6 +7,8 @@ from pydantic import ValidationError
 from . import schemas, storage
 from .db import SessionLocal
 from .engine import EngineError, TournamentState
+
+logger = logging.getLogger(__name__)
 
 
 def _require_int(payload: dict, key: str, *, allow_negative: bool = False) -> int:
@@ -26,9 +29,14 @@ def _parse_entry(raw) -> dict:
 
 def _parse_decimal(raw) -> Decimal:
     try:
-        return Decimal(str(raw))
+        value = Decimal(str(raw))
     except InvalidOperation:
         raise EngineError("Invalid amount")
+    if not value.is_finite():
+        # Decimal("Infinity") / Decimal("NaN") construct successfully but
+        # poison downstream money math (e.g. buy_in * total_entries) forever.
+        raise EngineError("Invalid amount")
+    return value
 
 
 class TournamentManager:
@@ -37,6 +45,9 @@ class TournamentManager:
         self.session_factory = session_factory or SessionLocal
         self.clients: list = []
         self.lock = asyncio.Lock()
+        # A wedged client (e.g. a laptop with its lid closed) must not be
+        # able to block broadcast() — and therefore the lock — forever.
+        self.broadcast_timeout = 5
 
     # --- persistence ---------------------------------------------------
     def load_from_db(self) -> None:
@@ -61,8 +72,12 @@ class TournamentManager:
         dead = []
         for websocket in list(self.clients):
             try:
-                await websocket.send_json(payload)
+                await asyncio.wait_for(
+                    websocket.send_json(payload), timeout=self.broadcast_timeout)
             except Exception:
+                # Includes asyncio.TimeoutError: a client whose send buffer
+                # is stuck must be pruned, not allowed to hold self.lock
+                # (via tick_once/handle_command) forever.
                 dead.append(websocket)
         for websocket in dead:
             if websocket in self.clients:
@@ -79,15 +94,36 @@ class TournamentManager:
     async def run_ticker(self) -> None:
         while True:
             await asyncio.sleep(1)
-            await self.tick_once()
+            try:
+                await self.tick_once()
+            except Exception:
+                # An unanticipated exception here must not permanently kill
+                # the background ticker — that would freeze the clock for
+                # every connected display with zero diagnostic output.
+                logger.exception("Ticker iteration failed")
 
     # --- commands ------------------------------------------------------
     async def handle_command(self, websocket, action: str, payload: dict) -> None:
         async with self.lock:
+            # Some engine methods (e.g. set_config) mutate state before
+            # fully validating it, so on any failure we must roll back to
+            # exactly what was in effect before this command ran — otherwise
+            # a partial mutation survives silently in memory.
+            snapshot = self.state.to_dict()
             try:
                 self._apply(action, payload or {})
             except EngineError as exc:
+                self.state = TournamentState.from_dict(snapshot)
                 await websocket.send_json({"type": "error", "message": str(exc)})
+                return
+            except Exception:
+                # Backstop for anything not raised as EngineError (e.g. a
+                # malformed payload reaching engine code as AttributeError/
+                # TypeError). Never leak internal exception details to the
+                # client.
+                self.state = TournamentState.from_dict(snapshot)
+                logger.exception("Unexpected error applying command %r", action)
+                await websocket.send_json({"type": "error", "message": "Invalid command"})
                 return
             self.persist()
             # Manual changes (including next/prev level) broadcast plain

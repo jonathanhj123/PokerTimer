@@ -1,4 +1,5 @@
 import asyncio
+import contextlib
 
 from app import storage
 from app.db import SessionLocal
@@ -141,3 +142,94 @@ def test_bad_entry_payload_is_engine_error_not_crash(clean_db):
     asyncio.run(manager.handle_command(
         admin, "update_entry", {"index": 0, "entry": {"type": "level", "sb": -5}}))
     assert admin.sent[-1]["type"] == "error"
+
+
+# --- Critical #1: non-finite buy_in must not poison the server -----------
+
+def test_set_config_rejects_non_finite_buy_in(clean_db):
+    manager = make_manager()
+    original_buy_in = manager.state.buy_in
+
+    for bad_value in ("Infinity", "NaN", "-Infinity"):
+        admin = FakeWebSocket()
+
+        asyncio.run(manager.handle_command(
+            admin, "set_config", {"buy_in": bad_value}))
+
+        assert admin.sent[-1]["type"] == "error"
+        assert manager.state.buy_in == original_buy_in
+        # The handshake path (and every future one) must still work —
+        # to_dict() must not have been poisoned into raising forever.
+        manager.state.to_dict()
+
+
+# --- Important #3: a failed command must not leave partial mutations -----
+
+def test_set_config_error_rolls_back_partial_mutation(clean_db):
+    manager = make_manager()
+    admin = FakeWebSocket()
+    original_buy_in = manager.state.buy_in
+
+    # engine.set_config assigns buy_in before validating currency, so a
+    # valid buy_in paired with an invalid currency must not stick.
+    asyncio.run(manager.handle_command(
+        admin, "set_config", {"buy_in": "25", "currency": ""}))
+
+    assert admin.sent[-1]["type"] == "error"
+    assert manager.state.buy_in == original_buy_in
+
+
+# --- Important #4: the ticker must survive an exception in tick_once -----
+
+def test_ticker_survives_tick_once_exception(clean_db, monkeypatch):
+    manager = make_manager()
+    calls = []
+    real_sleep = asyncio.sleep  # captured before patching, still a real checkpoint
+
+    async def fast_sleep(_seconds):
+        # Keep run_ticker's loop a real yield point (so the event loop can
+        # interleave with the driving test coroutine below) without
+        # actually waiting a full second per iteration.
+        await real_sleep(0)
+
+    async def flaky_tick_once():
+        calls.append(1)
+        if len(calls) == 1:
+            raise RuntimeError("boom")
+
+    monkeypatch.setattr(asyncio, "sleep", fast_sleep)
+    monkeypatch.setattr(manager, "tick_once", flaky_tick_once)
+
+    async def run():
+        task = asyncio.create_task(manager.run_ticker())
+        for _ in range(50):
+            if len(calls) >= 2:
+                break
+            await real_sleep(0)
+        task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await task
+
+    asyncio.run(run())
+
+    # The exception on the first call must not have killed the loop —
+    # tick_once (or its replacement) keeps getting invoked afterward.
+    assert len(calls) >= 2
+
+
+# --- Important #5: a wedged client must not block the broadcast lock -----
+
+def test_slow_client_is_pruned_instead_of_blocking_broadcast(clean_db):
+    class HangingWebSocket:
+        async def send_json(self, data):
+            await asyncio.sleep(999)
+
+    manager = make_manager()
+    manager.broadcast_timeout = 0.05
+    hanging, alive = HangingWebSocket(), FakeWebSocket()
+    manager.clients = [hanging, alive]
+
+    asyncio.run(manager.broadcast())
+
+    assert manager.clients == [alive]
+    assert alive.sent[-1]["type"] == "state"
