@@ -17,11 +17,16 @@ async def lifespan(app: FastAPI):
     ticker = None
     if not os.environ.get("DISABLE_TICKER"):
         ticker = asyncio.create_task(manager.run_ticker())
-    yield
-    if ticker:
-        ticker.cancel()
-        with contextlib.suppress(asyncio.CancelledError):
-            await ticker
+    try:
+        yield
+    finally:
+        # An exception raised anywhere during app runtime (between startup
+        # and shutdown) must still reach this cleanup, or the ticker task
+        # leaks (never cancelled/awaited) on the way out.
+        if ticker:
+            ticker.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await ticker
 
 
 app = FastAPI(title="PokerTimer", lifespan=lifespan)

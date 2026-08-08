@@ -42,7 +42,10 @@ async def websocket_endpoint(websocket: WebSocket):
                 await websocket.send_json(
                     {"type": "error", "message": "Not authorized"})
                 continue
-            payload = message.get("payload") or {}
+            # Check the type BEFORE any falsy-coercion: `or {}` would turn
+            # a present-but-wrong-type payload like [] / 0 / False / "" into
+            # {}, silently bypassing this guard instead of tripping it.
+            payload = message.get("payload", {})
             if not isinstance(payload, dict):
                 await websocket.send_json(_INVALID_MESSAGE)
                 continue

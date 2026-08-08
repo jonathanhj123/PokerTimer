@@ -113,3 +113,27 @@ def test_non_dict_payload_gets_error_reply_and_does_not_crash_dispatch(client):
         admin.send_json({"type": "command", "action": "start", "payload": {}})
         follow_up = admin.receive_json()
     assert follow_up["state"]["status"] == "running"
+
+
+# --- Round 2 Minor #1: falsy non-dict payloads must not be silently -------
+# --- coerced into {} before the isinstance(dict) guard sees them ----------
+
+def test_falsy_non_dict_payload_is_rejected_not_silently_coerced(client):
+    # `message.get("payload") or {}` would turn a present-but-wrong-type
+    # falsy payload like [] into {} BEFORE the isinstance check ever runs,
+    # letting it silently through as an (incorrect) empty-payload command
+    # instead of tripping the "Invalid message" guard. [1, 2, 3] (used in
+    # the sibling test above) is truthy and never exercised this path.
+    seed_structure()
+    headers = login_cookie(client)
+    with client.websocket_connect("/ws", headers=headers) as admin:
+        admin.receive_json()
+        admin.send_json(
+            {"type": "command", "action": "start", "payload": []})
+        reply = admin.receive_json()
+        assert reply == {"type": "error", "message": "Invalid message"}
+
+        # connection must still be alive and able to run a real command
+        admin.send_json({"type": "command", "action": "start", "payload": {}})
+        follow_up = admin.receive_json()
+    assert follow_up["state"]["status"] == "running"

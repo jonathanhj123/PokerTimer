@@ -32,9 +32,21 @@ def _parse_decimal(raw) -> Decimal:
         value = Decimal(str(raw))
     except InvalidOperation:
         raise EngineError("Invalid amount")
-    if not value.is_finite():
+    # is_finite() and copy_abs() are quiet, context-free operations that
+    # never raise regardless of magnitude. abs(value) is NOT safe to use
+    # here: for an extreme exponent (e.g. "1e999999999") it applies the
+    # ambient decimal context's rounding/Emax check and raises
+    # decimal.Overflow itself, before this guard ever gets a chance to
+    # reject the value cleanly.
+    if not value.is_finite() or value.copy_abs() > Decimal("1000000000"):
         # Decimal("Infinity") / Decimal("NaN") construct successfully but
         # poison downstream money math (e.g. buy_in * total_entries) forever.
+        # A huge-but-finite value (e.g. "1e999999999") passes is_finite() and
+        # the engine's buy_in < 0 check, but can overflow Decimal's default
+        # 28-digit context inside compute_prize_pool/compute_payouts once
+        # multiplied against realistic entry counts or percentages. A
+        # billion-unit bound is comically beyond anything realistic while
+        # leaving huge headroom before that math could overflow.
         raise EngineError("Invalid amount")
     return value
 
@@ -67,28 +79,52 @@ class TournamentManager:
             session.commit()
 
     # --- realtime ------------------------------------------------------
+    async def _send_with_timeout(self, websocket, payload, timeout: float = 5) -> bool:
+        try:
+            await asyncio.wait_for(websocket.send_json(payload), timeout=timeout)
+            return True
+        except Exception:
+            return False
+
     async def broadcast(self, message_type: str = "state") -> None:
         payload = {"type": message_type, "state": self.state.to_dict()}
         dead = []
         for websocket in list(self.clients):
-            try:
-                await asyncio.wait_for(
-                    websocket.send_json(payload), timeout=self.broadcast_timeout)
-            except Exception:
-                # Includes asyncio.TimeoutError: a client whose send buffer
-                # is stuck must be pruned, not allowed to hold self.lock
-                # (via tick_once/handle_command) forever.
+            # Includes asyncio.TimeoutError: a client whose send buffer is
+            # stuck must be pruned, not allowed to hold self.lock (via
+            # tick_once/handle_command) forever.
+            ok = await self._send_with_timeout(
+                websocket, payload, timeout=self.broadcast_timeout)
+            if not ok:
                 dead.append(websocket)
         for websocket in dead:
             if websocket in self.clients:
                 self.clients.remove(websocket)
+            # Best-effort teardown: a pruned client gets no more broadcasts,
+            # so leaving the socket open would leave a "zombie" connection
+            # that never prompts the browser to reconnect. A socket that's
+            # already wedged might not close cleanly either — that must not
+            # raise past this point.
+            try:
+                await websocket.close()
+            except Exception:
+                pass
 
     async def tick_once(self) -> None:
         async with self.lock:
             if self.state.status != "running":
                 return
-            event = self.state.tick()
-            self.persist()
+            # Same rollback discipline as handle_command below: if tick() or
+            # persist() fails partway, self.state must not be left poisoned
+            # in memory for every subsequent handshake/broadcast/tick.
+            snapshot = self.state.to_dict()
+            try:
+                event = self.state.tick()
+                self.persist()
+            except Exception:
+                self.state = TournamentState.from_dict(snapshot)
+                logger.exception("tick_once failed unexpectedly")
+                return
             await self.broadcast("level_change" if event == "level_change" else "state")
 
     async def run_ticker(self) -> None:
@@ -108,24 +144,36 @@ class TournamentManager:
             # Some engine methods (e.g. set_config) mutate state before
             # fully validating it, so on any failure we must roll back to
             # exactly what was in effect before this command ran — otherwise
-            # a partial mutation survives silently in memory.
+            # a partial mutation survives silently in memory. persist() is
+            # deliberately INSIDE this same try: if it raises (e.g. a huge
+            # buy_in overflowing Decimal math in to_dict()'s computed
+            # fields), self.state must be rolled back too, or the poisoned
+            # value survives in memory even though nothing was committed to
+            # the DB (SQLAlchemy only commits on persist()'s last line).
             snapshot = self.state.to_dict()
             try:
                 self._apply(action, payload or {})
+                self.persist()
             except EngineError as exc:
                 self.state = TournamentState.from_dict(snapshot)
-                await websocket.send_json({"type": "error", "message": str(exc)})
+                # Use the timeout-guarded send (same self.broadcast_timeout
+                # budget as broadcast()) so a stalled/malformed client can't
+                # wedge self.lock forever on this direct reply.
+                await self._send_with_timeout(
+                    websocket, {"type": "error", "message": str(exc)},
+                    timeout=self.broadcast_timeout)
                 return
             except Exception:
                 # Backstop for anything not raised as EngineError (e.g. a
                 # malformed payload reaching engine code as AttributeError/
-                # TypeError). Never leak internal exception details to the
-                # client.
+                # TypeError, or persist() failing on a poisoned state).
+                # Never leak internal exception details to the client.
                 self.state = TournamentState.from_dict(snapshot)
                 logger.exception("Unexpected error applying command %r", action)
-                await websocket.send_json({"type": "error", "message": "Invalid command"})
+                await self._send_with_timeout(
+                    websocket, {"type": "error", "message": "Invalid command"},
+                    timeout=self.broadcast_timeout)
                 return
-            self.persist()
             # Manual changes (including next/prev level) broadcast plain
             # "state" — only the automatic ticker advance emits "level_change",
             # so admin corrections never trigger the display's flash/sound.

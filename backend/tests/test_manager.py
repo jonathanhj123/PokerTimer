@@ -221,15 +221,131 @@ def test_ticker_survives_tick_once_exception(clean_db, monkeypatch):
 
 def test_slow_client_is_pruned_instead_of_blocking_broadcast(clean_db):
     class HangingWebSocket:
+        def __init__(self):
+            self.closed = False
+
         async def send_json(self, data):
             await asyncio.sleep(999)
+
+        async def close(self):
+            self.closed = True
 
     manager = make_manager()
     manager.broadcast_timeout = 0.05
     hanging, alive = HangingWebSocket(), FakeWebSocket()
     manager.clients = [hanging, alive]
 
+    # If the timeout logic ever regresses, broadcast() would hang on the
+    # 999s sleep instead of pruning — wrap the drive in an outer timeout so
+    # a regression fails this test fast instead of hanging the whole suite.
+    asyncio.run(asyncio.wait_for(manager.broadcast(), timeout=10))
+
+    assert manager.clients == [alive]
+    assert alive.sent[-1]["type"] == "state"
+    # Minor #2: a pruned client must actually be torn down, not left as a
+    # zombie connection that gets no more broadcasts but never reconnects.
+    assert hanging.closed is True
+
+
+def test_pruned_client_without_close_method_does_not_crash_broadcast(clean_db):
+    # A socket double (or a real socket already wedged) that lacks/fails a
+    # close() must not raise past broadcast()'s own best-effort cleanup.
+    class DeadNoCloseWebSocket:
+        async def send_json(self, data):
+            raise RuntimeError("gone")
+
+    manager = make_manager()
+    dead, alive = DeadNoCloseWebSocket(), FakeWebSocket()
+    manager.clients = [dead, alive]
+
     asyncio.run(manager.broadcast())
 
     assert manager.clients == [alive]
     assert alive.sent[-1]["type"] == "state"
+
+
+# --- Round 2 Critical: a huge finite buy_in must not brick the server ----
+
+def test_set_config_rejects_huge_finite_buy_in(clean_db):
+    # "1e999999999" is finite (passes is_finite()) and non-negative (passes
+    # engine.py's buy_in < 0 check), but is astronomically beyond the
+    # magnitude bound and must be rejected by _parse_decimal directly.
+    manager = make_manager()
+    original_buy_in = manager.state.buy_in
+    admin = FakeWebSocket()
+
+    asyncio.run(manager.handle_command(
+        admin, "set_config", {"buy_in": "1e999999999"}))
+
+    assert admin.sent[-1]["type"] == "error"
+    assert manager.state.buy_in == original_buy_in
+
+
+def test_set_config_huge_buy_in_does_not_poison_state_with_entries(clean_db):
+    # Defense in depth: with total_entries > 0, compute_prize_pool's
+    # buy_in * total_entries is actually exercised inside to_dict() (called
+    # from persist()). Even if some huge-but-under-the-bound value slipped
+    # through, the rollback in handle_command must keep self.state usable —
+    # to_dict() must not raise, buy_in must be unchanged, and the connection
+    # must keep working for subsequent commands (the server isn't bricked).
+    manager = make_manager()
+    admin = FakeWebSocket()
+    manager.clients = [admin]
+    asyncio.run(manager.handle_command(
+        admin, "set_counts", {"total_entries": 10}))
+    original_buy_in = manager.state.buy_in
+
+    asyncio.run(manager.handle_command(
+        admin, "set_config", {"buy_in": "1e999999999"}))
+
+    assert admin.sent[-1]["type"] == "error"
+    assert manager.state.buy_in == original_buy_in
+    # Proves the server isn't bricked: to_dict() (called on every handshake,
+    # broadcast, and tick) still works and reports the unchanged buy_in.
+    assert manager.state.to_dict()["buy_in"] == str(original_buy_in)
+    # And the connection is still fully usable afterward.
+    asyncio.run(manager.handle_command(admin, "start", {}))
+    assert admin.sent[-1]["type"] == "state"
+    assert admin.sent[-1]["state"]["status"] == "running"
+
+
+# --- Round 2 Important: a stalled direct error-reply must not wedge lock -
+
+def test_stalled_error_reply_does_not_block_lock_for_other_commands(clean_db):
+    class HangingWebSocket:
+        def __init__(self):
+            self.send_started = asyncio.Event()
+
+        async def send_json(self, data):
+            self.send_started.set()
+            await asyncio.sleep(999)
+
+    manager = make_manager()
+    manager.broadcast_timeout = 0.05
+    hanging = HangingWebSocket()
+    second_client = FakeWebSocket()
+    # handle_command's success path broadcasts to manager.clients, not
+    # directly back to the caller's websocket — the second client must be
+    # registered to observe the broadcast.
+    manager.clients = [second_client]
+
+    async def run():
+        # "pause" before start is an EngineError — this exercises
+        # handle_command's direct error-reply send, not broadcast().
+        first = asyncio.create_task(manager.handle_command(hanging, "pause", {}))
+        await asyncio.wait_for(hanging.send_started.wait(), timeout=5)
+        # At this point `first` holds self.lock and is stalled inside its
+        # direct error-reply send — exactly the scenario under test.
+        assert manager.lock.locked()
+
+        second = asyncio.create_task(
+            manager.handle_command(second_client, "start", {}))
+        # Bounded by broadcast_timeout (0.05s), not the 999s hang — if the
+        # lock ever got wedged again, this would time out instead.
+        await asyncio.wait_for(asyncio.gather(first, second), timeout=10)
+
+    asyncio.run(run())
+
+    assert manager.state.status == "running"
+    assert second_client.sent[-1]["type"] == "state"
+    assert second_client.sent[-1]["state"]["status"] == "running"
