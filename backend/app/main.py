@@ -1,4 +1,5 @@
 import asyncio
+import contextlib
 import os
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -21,9 +22,13 @@ async def lifespan(app: FastAPI):
     ticker = None
     if not os.environ.get("DISABLE_TICKER"):
         ticker = asyncio.create_task(manager.run_ticker())
-    yield
-    if ticker:
-        ticker.cancel()
+    try:
+        yield
+    finally:
+        if ticker:
+            ticker.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await ticker
 
 
 app = FastAPI(title="PokerTimer", lifespan=lifespan)
