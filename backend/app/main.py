@@ -5,7 +5,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
-from . import routes_auth, ws
+from . import routes_auth, routes_templates, ws
 from .db import init_db
 from .manager import manager
 
@@ -31,6 +31,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="PokerTimer", lifespan=lifespan)
 app.include_router(routes_auth.router)
+app.include_router(routes_templates.router)
 app.include_router(ws.router)
 
 
