@@ -1,0 +1,89 @@
+<script>
+  import { conn, send } from '../connection.svelte.js';
+  import { formatChips, formatMoney } from '../format.js';
+
+  const s = $derived(conn.state);
+
+  let buyIn = $state('');
+  let currency = $state('');
+  let stack = $state('');
+  let bonus = $state('');
+  let seeded = false;
+
+  $effect(() => {
+    if (s && !seeded) {
+      seeded = true;
+      buyIn = s.buy_in;
+      currency = s.currency;
+      stack = String(s.starting_stack);
+      bonus = String(s.early_bird_bonus);
+    }
+  });
+
+  function applyConfig() {
+    send('set_config', {
+      buy_in: buyIn,
+      currency,
+      starting_stack: parseInt(stack, 10) || 0,
+      early_bird_bonus: parseInt(bonus, 10) || 0,
+    });
+  }
+
+  function bump(field, delta) {
+    send('set_counts', { [field]: Math.max(0, s[field] + delta) });
+  }
+
+  const countRows = [
+    ['total_entries', 'Entries (incl. rebuys)'],
+    ['players_remaining', 'Players remaining'],
+    ['early_bird_count', 'Early birds'],
+  ];
+</script>
+
+<section class="panel">
+  <h3>Money & players</h3>
+  <div class="grid2">
+    <label>Buy-in <input bind:value={buyIn} inputmode="decimal" /></label>
+    <label>Currency <input bind:value={currency} size="4" /></label>
+    <label>Starting stack <input bind:value={stack} inputmode="numeric" /></label>
+    <label>Early-bird chips <input bind:value={bonus} inputmode="numeric" /></label>
+  </div>
+  <div class="row"><button onclick={applyConfig}>Apply</button></div>
+
+  {#each countRows as [field, label]}
+    <div class="row count-row">
+      <span class="count-label">{label}</span>
+      <button onclick={() => bump(field, -1)}>−</button>
+      <strong class="count-value">{s[field]}</strong>
+      <button onclick={() => bump(field, 1)}>+</button>
+    </div>
+  {/each}
+
+  <p class="summary">
+    Pool <strong>{formatMoney(s.computed.prize_pool, s.currency)}</strong>
+    · Avg stack
+    <strong>
+      {s.computed.average_stack === null ? '—' : formatChips(s.computed.average_stack)}
+    </strong>
+  </p>
+</section>
+
+<style>
+  .grid2 {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.6rem;
+    margin-bottom: 0.8rem;
+  }
+  .grid2 label {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    font-size: 0.85rem;
+    color: #9ca3af;
+  }
+  .count-row { justify-content: space-between; }
+  .count-label { flex: 1; color: #9ca3af; }
+  .count-value { min-width: 2ch; text-align: center; font-size: 1.1rem; }
+  .summary { color: #9ca3af; margin: 0.6rem 0 0; }
+</style>
