@@ -31,7 +31,9 @@ def test_session_token_roundtrip():
 
 def test_tampered_token_rejected():
     token = auth.create_session_token()
-    assert auth.verify_session_token(token[:-1] + "0") is False
+    last = token[-1]
+    flipped = "0" if last != "0" else "1"
+    assert auth.verify_session_token(token[:-1] + flipped) is False
     assert auth.verify_session_token("garbage") is False
     assert auth.verify_session_token(None) is False
 

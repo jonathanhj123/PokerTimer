@@ -71,3 +71,20 @@ def test_load_template_mid_game_409(client):
     manager.state = TournamentState(structure=[level(25, 50)])
     manager.state.start()
     assert client.post(f"/api/templates/{template_id}/load").status_code == 409
+
+
+def test_load_template_broadcasts_to_connected_websocket_clients(client):
+    login(client)
+    structure = [level(100, 200), level(200, 400)]
+    template_id = client.post(
+        "/api/templates", json={"name": "Turbo", "structure": structure}).json()["id"]
+
+    with client.websocket_connect("/ws") as websocket:
+        websocket.receive_json()  # initial handshake frame
+
+        response = client.post(f"/api/templates/{template_id}/load")
+        assert response.status_code == 200
+
+        frame = websocket.receive_json()
+        assert frame["type"] == "state"
+        assert frame["state"]["structure"] == structure

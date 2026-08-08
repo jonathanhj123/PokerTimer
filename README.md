@@ -26,6 +26,10 @@ Requires Python 3.11+ and Node 18+.
     .venv\Scripts\activate           # PowerShell: .venv\Scripts\Activate.ps1
     uvicorn app.main:app --host 0.0.0.0 --port 8000
 
+Run as a single process (do not add `--workers`) — the tournament state lives in
+one process's memory, so multiple workers would each run their own disagreeing
+tournament.
+
 Find this machine's LAN IP with `ipconfig` (IPv4 Address), then:
 
 - **TV / display:** `http://<ip>:8000/` — fullscreen it (F11), tap the 🔊 chip once

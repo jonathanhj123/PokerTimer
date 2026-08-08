@@ -287,4 +287,8 @@ class TournamentManager:
             raise EngineError(f"Unknown command: {action}")
 
 
+# Exactly one instance must exist per running server process — the tournament
+# state (and the ticker task built on it) lives only in this object's memory,
+# so running uvicorn with multiple workers would give each worker its own
+# disagreeing TournamentManager instead of one shared source of truth.
 manager = TournamentManager()
