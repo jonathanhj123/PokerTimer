@@ -97,3 +97,32 @@ class TournamentState:
             self.seconds_remaining = self.structure[self.current_index]["minutes"] * 60
             return "level_change"
         return None
+
+    # --- navigation & time adjustment ---------------------------------
+    def _require_active(self) -> None:
+        if self.status not in ("running", "paused"):
+            raise EngineError("No tournament in progress")
+
+    def next_level(self) -> None:
+        self._require_active()
+        if self.current_index + 1 >= len(self.structure):
+            raise EngineError("Already at the final level")
+        self.current_index += 1
+        self.seconds_remaining = self.structure[self.current_index]["minutes"] * 60
+
+    def prev_level(self) -> None:
+        self._require_active()
+        if self.current_index == 0:
+            raise EngineError("Already at the first level")
+        self.current_index -= 1
+        self.seconds_remaining = self.structure[self.current_index]["minutes"] * 60
+
+    def adjust_time(self, delta_seconds: int) -> None:
+        self._require_active()
+        self.seconds_remaining = max(0, self.seconds_remaining + delta_seconds)
+
+    def set_time(self, seconds: int) -> None:
+        self._require_active()
+        if seconds < 0:
+            raise EngineError("Time cannot be negative")
+        self.seconds_remaining = seconds
