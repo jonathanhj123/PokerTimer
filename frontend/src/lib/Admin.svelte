@@ -3,6 +3,9 @@
   import { conn, connect } from './connection.svelte.js';
   import ClockControls from './admin/ClockControls.svelte';
   import MoneyPanel from './admin/MoneyPanel.svelte';
+  import PayoutEditor from './admin/PayoutEditor.svelte';
+  import StructureEditor from './admin/StructureEditor.svelte';
+  import TemplateBar from './admin/TemplateBar.svelte';
 
   let checked = $state(false);
   let loggedIn = $state(false);
@@ -66,7 +69,9 @@
     <div class="panels">
       <ClockControls />
       <MoneyPanel />
-      <!-- Task 14 adds: PayoutEditor, StructureEditor, TemplateBar -->
+      <PayoutEditor />
+      <TemplateBar />
+      <StructureEditor />
     </div>
   </main>
 {/if}
