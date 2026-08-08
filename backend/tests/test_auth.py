@@ -20,6 +20,10 @@ def test_verify_malformed_hash_is_false():
     assert auth.verify_password("x", "") is False
 
 
+def test_verify_password_none_stored_is_false():
+    assert auth.verify_password("x", None) is False
+
+
 def test_session_token_roundtrip():
     token = auth.create_session_token()
     assert auth.verify_session_token(token) is True
@@ -38,6 +42,17 @@ def test_expired_token_rejected(monkeypatch):
     sig = hmac.new(config.SECRET_KEY.encode(), old_ts.encode(),
                    hashlib.sha256).hexdigest()
     assert auth.verify_session_token(f"{old_ts}.{sig}") is False
+
+
+def test_non_ascii_token_rejected_not_crashed():
+    assert auth.verify_session_token("123.\xe9bad") is False
+    assert auth.verify_session_token("123.bad☃signature") is False
+
+
+def test_empty_secret_key_rejects_all_tokens(monkeypatch):
+    token = auth.create_session_token()
+    monkeypatch.setattr(config, "SECRET_KEY", "")
+    assert auth.verify_session_token(token) is False
 
 
 def test_login_wrong_password_401():
