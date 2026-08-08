@@ -23,7 +23,7 @@ Requires Python 3.11+ and Node 18+.
 ## Poker night
 
     cd backend
-    .venv\Scripts\activate
+    .venv\Scripts\activate           # PowerShell: .venv\Scripts\Activate.ps1
     uvicorn app.main:app --host 0.0.0.0 --port 8000
 
 Find this machine's LAN IP with `ipconfig` (IPv4 Address), then:
@@ -37,7 +37,7 @@ Resume when ready.
 
 ## Development
 
-    # terminal 1
+    # terminal 1 (PowerShell: .venv\Scripts\Activate.ps1 instead of activate)
     cd backend && .venv\Scripts\activate && uvicorn app.main:app --reload --port 8000
     # terminal 2
     cd frontend && npm run dev      # → http://localhost:5173
