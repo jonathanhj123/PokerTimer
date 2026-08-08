@@ -9,7 +9,13 @@
   let message = $state('');
 
   async function refresh() {
-    templates = await (await fetch('/api/templates')).json();
+    const response = await fetch('/api/templates');
+    if (!response.ok) {
+      templates = [];
+      message = 'Failed to load templates';
+      return;
+    }
+    templates = await response.json();
   }
   onMount(refresh);
 
@@ -35,7 +41,11 @@
 
   async function removeTemplate() {
     if (!selected) return;
-    await fetch(`/api/templates/${selected}`, { method: 'DELETE' });
+    const response = await fetch(`/api/templates/${selected}`, { method: 'DELETE' });
+    if (!response.ok) {
+      message = (await response.json()).detail || 'Failed to delete template';
+      return;
+    }
     selected = '';
     refresh();
   }
