@@ -300,6 +300,13 @@ def test_set_config_huge_buy_in_does_not_poison_state_with_entries(clean_db):
 
     assert admin.sent[-1]["type"] == "error"
     assert manager.state.buy_in == original_buy_in
+    # Proves the server isn't bricked: to_dict() (called on every handshake,
+    # broadcast, and tick) still works and reports the unchanged buy_in.
+    assert manager.state.to_dict()["buy_in"] == str(original_buy_in)
+    # And the connection is still fully usable afterward.
+    asyncio.run(manager.handle_command(admin, "start", {}))
+    assert admin.sent[-1]["type"] == "state"
+    assert admin.sent[-1]["state"]["status"] == "running"
 
 
 # --- Round 2 Important: a stalled direct error-reply must not wedge lock -
