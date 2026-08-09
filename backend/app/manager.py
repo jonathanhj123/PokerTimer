@@ -18,7 +18,7 @@ def _require_int(payload: dict, key: str, *, allow_negative: bool = False) -> in
     if not allow_negative and value < 0:
         raise EngineError(f"{key} cannot be negative")
     # Mirrors _parse_decimal's magnitude bound: an unbounded int (e.g. a
-    # 4000-digit total_entries) gets committed to the DB and makes every
+    # 4000-digit entries) gets committed to the DB and makes every
     # subsequent to_dict() do 4000-digit arithmetic. A billion is comically
     # beyond any realistic player count, chip stack, or index. Plain ints
     # don't have Decimal's context-bound abs() overflow hazard, so a normal
@@ -48,7 +48,7 @@ def _parse_decimal(raw) -> Decimal:
     # reject the value cleanly.
     if not value.is_finite() or value.copy_abs() > Decimal("1000000000"):
         # Decimal("Infinity") / Decimal("NaN") construct successfully but
-        # poison downstream money math (e.g. buy_in * total_entries) forever.
+        # poison downstream money math (e.g. buy_in * entries) forever.
         # A huge-but-finite value (e.g. "1e999999999") passes is_finite() and
         # the engine's buy_in < 0 check, but can overflow Decimal's default
         # 28-digit context inside compute_prize_pool/compute_payouts once
@@ -268,15 +268,21 @@ class TournamentManager:
                                 if "starting_stack" in p else None),
                 early_bird_bonus=(_require_int(p, "early_bird_bonus")
                                   if "early_bird_bonus" in p else None),
+                rebuy_price=(_parse_decimal(p["rebuy_price"])
+                            if "rebuy_price" in p else None),
+                rebuy_stack=(_require_int(p, "rebuy_stack")
+                            if "rebuy_stack" in p else None),
             )
         elif action == "set_counts":
             s.set_counts(
-                total_entries=(_require_int(p, "total_entries")
-                               if "total_entries" in p else None),
+                entries=(_require_int(p, "entries")
+                        if "entries" in p else None),
                 players_remaining=(_require_int(p, "players_remaining")
                                    if "players_remaining" in p else None),
                 early_bird_count=(_require_int(p, "early_bird_count")
                                   if "early_bird_count" in p else None),
+                rebuy_count=(_require_int(p, "rebuy_count")
+                            if "rebuy_count" in p else None),
             )
         elif action == "set_payouts":
             percentages = p.get("percentages")

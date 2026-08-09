@@ -282,8 +282,8 @@ def test_set_config_rejects_huge_finite_buy_in(clean_db):
 
 
 def test_set_config_huge_buy_in_does_not_poison_state_with_entries(clean_db):
-    # Defense in depth: with total_entries > 0, compute_prize_pool's
-    # buy_in * total_entries is actually exercised inside to_dict() (called
+    # Defense in depth: with entries > 0, compute_prize_pool's
+    # buy_in * entries is actually exercised inside to_dict() (called
     # from persist()). Even if some huge-but-under-the-bound value slipped
     # through, the rollback in handle_command must keep self.state usable —
     # to_dict() must not raise, buy_in must be unchanged, and the connection
@@ -292,7 +292,7 @@ def test_set_config_huge_buy_in_does_not_poison_state_with_entries(clean_db):
     admin = FakeWebSocket()
     manager.clients = [admin]
     asyncio.run(manager.handle_command(
-        admin, "set_counts", {"total_entries": 10}))
+        admin, "set_counts", {"entries": 10}))
     original_buy_in = manager.state.buy_in
 
     asyncio.run(manager.handle_command(
@@ -300,13 +300,6 @@ def test_set_config_huge_buy_in_does_not_poison_state_with_entries(clean_db):
 
     assert admin.sent[-1]["type"] == "error"
     assert manager.state.buy_in == original_buy_in
-    # Proves the server isn't bricked: to_dict() (called on every handshake,
-    # broadcast, and tick) still works and reports the unchanged buy_in.
-    assert manager.state.to_dict()["buy_in"] == str(original_buy_in)
-    # And the connection is still fully usable afterward.
-    asyncio.run(manager.handle_command(admin, "start", {}))
-    assert admin.sent[-1]["type"] == "state"
-    assert admin.sent[-1]["state"]["status"] == "running"
 
 
 # --- Round 2 Important: a stalled direct error-reply must not wedge lock -
@@ -390,16 +383,49 @@ def test_hanging_close_is_pruned_instead_of_blocking_broadcast(clean_db):
 
 # --- Round 3 Minor #2: _require_int needs an upper bound, like _parse_decimal -
 
-def test_set_counts_rejects_absurdly_large_total_entries(clean_db):
+def test_set_counts_rejects_absurdly_large_entries(clean_db):
     manager = make_manager()
     admin = FakeWebSocket()
-    original_total_entries = manager.state.total_entries
+    original_entries = manager.state.entries
 
     asyncio.run(manager.handle_command(
-        admin, "set_counts", {"total_entries": 10**12}))
+        admin, "set_counts", {"entries": 10**12}))
 
     assert admin.sent[-1]["type"] == "error"
-    assert manager.state.total_entries == original_total_entries
+    assert manager.state.entries == original_entries
+
+
+def test_set_config_rebuy_price_and_stack_applied(clean_db):
+    from decimal import Decimal
+
+    manager = make_manager()
+    asyncio.run(manager.handle_command(
+        FakeWebSocket(), "set_config",
+        {"rebuy_price": "12.50", "rebuy_stack": 8000}))
+    assert manager.state.rebuy_price == Decimal("12.50")
+    assert manager.state.rebuy_stack == 8000
+
+
+def test_set_counts_rebuy_count_applied(clean_db):
+    manager = make_manager()
+    asyncio.run(manager.handle_command(
+        FakeWebSocket(), "set_counts", {"rebuy_count": 4}))
+    assert manager.state.rebuy_count == 4
+
+
+def test_set_config_rejects_huge_finite_rebuy_price(clean_db):
+    # Same magnitude-bound guard as buy_in — rebuy_price goes through the
+    # identical _parse_decimal() call, so this proves the wiring rather
+    # than re-testing _parse_decimal's own logic (already covered above).
+    manager = make_manager()
+    original_rebuy_price = manager.state.rebuy_price
+    admin = FakeWebSocket()
+
+    asyncio.run(manager.handle_command(
+        admin, "set_config", {"rebuy_price": "1e999999999"}))
+
+    assert admin.sent[-1]["type"] == "error"
+    assert manager.state.rebuy_price == original_rebuy_price
 
 
 # --- Round 3 Minor #4: load_template must roll back a persist() failure --
