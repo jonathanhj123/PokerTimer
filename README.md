@@ -22,6 +22,10 @@ Requires Python 3.11+ and Node 18+.
 
 ## Poker night
 
+    .\start.ps1
+
+or, manually:
+
     cd backend
     .venv\Scripts\activate           # PowerShell: .venv\Scripts\Activate.ps1
     uvicorn app.main:app --host 0.0.0.0 --port 8000
