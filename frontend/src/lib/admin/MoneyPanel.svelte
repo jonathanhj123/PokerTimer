@@ -36,7 +36,14 @@
   }
 
   function bump(field, delta) {
-    send('set_counts', { [field]: Math.max(0, s[field] + delta) });
+    const updates = { [field]: Math.max(0, s[field] + delta) };
+    if (field === 'entries') {
+      // A new entry is a new player at the table; a rebuy isn't. Keep
+      // players_remaining in lockstep with entries so the admin only has
+      // to track it manually for the one event entries can't see: busts.
+      updates.players_remaining = Math.max(0, s.players_remaining + delta);
+    }
+    send('set_counts', updates);
   }
 
   const countRows = [
