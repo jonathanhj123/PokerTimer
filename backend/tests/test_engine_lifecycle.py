@@ -63,18 +63,23 @@ def test_reset_zeroes_counters_but_keeps_config():
     state.currency = "kr"
     state.starting_stack = 10000
     state.early_bird_bonus = 1000
+    state.rebuy_price = Decimal("10")
+    state.rebuy_stack = 8000
     state.start()
-    state.total_entries = 9
+    state.entries = 9
     state.players_remaining = 7
     state.early_bird_count = 5
+    state.rebuy_count = 4
     state.end()
     state.reset()
     assert state.status == "setup"
     assert state.current_index == 0 and state.seconds_remaining == 0
-    assert state.total_entries == 0 and state.players_remaining == 0
+    assert state.entries == 0 and state.players_remaining == 0
     assert state.early_bird_count == 0
+    assert state.rebuy_count == 0
     assert state.buy_in == Decimal("20") and state.currency == "kr"
     assert state.starting_stack == 10000 and state.early_bird_bonus == 1000
+    assert state.rebuy_price == Decimal("10") and state.rebuy_stack == 8000
     assert len(state.structure) == 3
 
 

@@ -9,7 +9,7 @@ from tests.helpers import brk, level
 def configured_state():
     state = TournamentState(
         structure=[level(25, 50), level(50, 100), brk(10), level(75, 150, ante=25)],
-        buy_in=Decimal("20"), total_entries=11, players_remaining=7,
+        buy_in=Decimal("20"), entries=11, players_remaining=7,
         starting_stack=10000, early_bird_bonus=1000, early_bird_count=5)
     return state
 
@@ -34,14 +34,30 @@ def test_set_config_validation():
         state.set_config(starting_stack=-1)
 
 
+def test_set_config_rebuy_price_and_stack():
+    state = TournamentState()
+    state.set_config(rebuy_price=Decimal("25"), rebuy_stack=8000)
+    assert state.rebuy_price == Decimal("25")
+    assert state.rebuy_stack == 8000
+    assert state.buy_in == Decimal("0")          # untouched
+    with pytest.raises(EngineError):
+        state.set_config(rebuy_price=Decimal("-1"))
+    with pytest.raises(EngineError):
+        state.set_config(rebuy_stack=-1)
+
+
 def test_set_counts_and_validation():
     state = TournamentState()
-    state.set_counts(total_entries=9, players_remaining=7, early_bird_count=5)
-    assert (state.total_entries, state.players_remaining, state.early_bird_count) == (9, 7, 5)
+    state.set_counts(entries=9, players_remaining=7, early_bird_count=5,
+                     rebuy_count=3)
+    assert (state.entries, state.players_remaining,
+           state.early_bird_count, state.rebuy_count) == (9, 7, 5, 3)
     with pytest.raises(EngineError):
         state.set_counts(players_remaining=-1)
     with pytest.raises(EngineError):
-        state.set_counts(total_entries=True)    # bools are not counts
+        state.set_counts(entries=True)    # bools are not counts
+    with pytest.raises(EngineError):
+        state.set_counts(rebuy_count=-1)
 
 
 def test_set_payouts_validation():
@@ -59,14 +75,15 @@ def test_set_payouts_validation():
 def test_to_dict_money_as_strings():
     data = configured_state().to_dict()
     assert data["buy_in"] == "20"
+    assert data["rebuy_price"] == "0"            # default, no rebuys configured
     assert data["computed"]["prize_pool"] == "220"
     assert data["computed"]["payouts"] == ["110", "66", "44"]
 
 
 def test_to_dict_exact_decimal_payouts():
     state = configured_state()
-    state.total_entries = 9                     # pool 180 → 50% = 90; use odd pool
-    state.buy_in = Decimal("25")                # pool 225
+    state.entries = 9                            # pool 180 → 50% = 90; use odd pool
+    state.buy_in = Decimal("25")                 # pool 225
     payouts = state.to_dict()["computed"]["payouts"]
     assert payouts == ["112.5", "67.5", "45"]
 
@@ -75,6 +92,18 @@ def test_computed_chip_stats():
     computed = configured_state().to_dict()["computed"]
     assert computed["chips_in_play"] == 11 * 10000 + 5 * 1000
     assert computed["average_stack"] == round(115000 / 7)
+
+
+def test_computed_includes_rebuys_in_pool_and_chips():
+    state = configured_state()
+    state.rebuy_price = Decimal("10")
+    state.rebuy_stack = 8000
+    state.rebuy_count = 3
+    computed = state.to_dict()["computed"]
+    # pool: 11 entries * 20 + 3 rebuys * 10 = 220 + 30
+    assert computed["prize_pool"] == "250"
+    # chips: 11*10000 + 3*8000 + 5*1000 = 110000 + 24000 + 5000
+    assert computed["chips_in_play"] == 139000
 
 
 def test_computed_next_entry_vs_next_blinds():
@@ -107,8 +136,12 @@ def test_is_final_entry():
 
 def test_roundtrip_from_dict():
     state = configured_state()
+    state.rebuy_price = Decimal("15")
+    state.rebuy_stack = 7500
+    state.rebuy_count = 2
     state.start()
     state.tick()
     restored = TournamentState.from_dict(state.to_dict())
     assert restored.to_dict() == state.to_dict()
-    assert restored.buy_in == Decimal("20")     # real Decimal, not str
+    assert restored.buy_in == Decimal("20")       # real Decimal, not str
+    assert restored.rebuy_price == Decimal("15")  # real Decimal, not str

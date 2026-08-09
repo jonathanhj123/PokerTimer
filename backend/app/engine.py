@@ -11,8 +11,9 @@ class EngineError(ValueError):
     """Invalid command; the message is safe to show the admin verbatim."""
 
 
-def compute_prize_pool(total_entries: int, buy_in: Decimal) -> Decimal:
-    return buy_in * total_entries
+def compute_prize_pool(entries: int, buy_in: Decimal,
+                       rebuy_count: int, rebuy_price: Decimal) -> Decimal:
+    return buy_in * entries + rebuy_price * rebuy_count
 
 
 def compute_payouts(pool: Decimal, percentages: list[int]) -> list[Decimal]:
@@ -20,9 +21,11 @@ def compute_payouts(pool: Decimal, percentages: list[int]) -> list[Decimal]:
     return [pool * pct / Decimal(100) for pct in percentages]
 
 
-def compute_chips_in_play(total_entries: int, starting_stack: int,
+def compute_chips_in_play(entries: int, starting_stack: int,
+                          rebuy_count: int, rebuy_stack: int,
                           early_bird_count: int, early_bird_bonus: int) -> int:
-    return total_entries * starting_stack + early_bird_count * early_bird_bonus
+    return (entries * starting_stack + rebuy_count * rebuy_stack
+            + early_bird_count * early_bird_bonus)
 
 
 def compute_average_stack(chips_in_play: int, players_remaining: int) -> int | None:
@@ -39,11 +42,14 @@ class TournamentState:
     seconds_remaining: int = 0
     buy_in: Decimal = Decimal("0")
     currency: str = "$"
-    total_entries: int = 0
+    entries: int = 0
     players_remaining: int = 0
     starting_stack: int = 0
     early_bird_bonus: int = 0
     early_bird_count: int = 0
+    rebuy_price: Decimal = Decimal("0")
+    rebuy_stack: int = 0
+    rebuy_count: int = 0
     payout_percentages: list[int] = field(default_factory=lambda: [50, 30, 20])
 
     # --- lifecycle -----------------------------------------------------
@@ -72,14 +78,16 @@ class TournamentState:
         self.status = "finished"
 
     def reset(self) -> None:
-        # structure, buy_in, currency, starting_stack, early_bird_bonus and
-        # payout_percentages survive a reset so the next game starts configured
+        # structure, buy_in, currency, starting_stack, early_bird_bonus,
+        # rebuy_price, rebuy_stack and payout_percentages survive a reset so
+        # the next game starts configured
         self.status = "setup"
         self.current_index = 0
         self.seconds_remaining = 0
-        self.total_entries = 0
+        self.entries = 0
         self.players_remaining = 0
         self.early_bird_count = 0
+        self.rebuy_count = 0
 
     # --- clock ---------------------------------------------------------
     def tick(self) -> str | None:
@@ -207,7 +215,9 @@ class TournamentState:
     def set_config(self, *, buy_in: Decimal | None = None,
                    currency: str | None = None,
                    starting_stack: int | None = None,
-                   early_bird_bonus: int | None = None) -> None:
+                   early_bird_bonus: int | None = None,
+                   rebuy_price: Decimal | None = None,
+                   rebuy_stack: int | None = None) -> None:
         if buy_in is not None:
             if buy_in < 0:
                 raise EngineError("Buy-in cannot be negative")
@@ -225,13 +235,23 @@ class TournamentState:
             if early_bird_bonus < 0:
                 raise EngineError("Early-bird bonus cannot be negative")
             self.early_bird_bonus = early_bird_bonus
+        if rebuy_price is not None:
+            if rebuy_price < 0:
+                raise EngineError("Rebuy price cannot be negative")
+            self.rebuy_price = rebuy_price
+        if rebuy_stack is not None:
+            if rebuy_stack < 0:
+                raise EngineError("Rebuy stack cannot be negative")
+            self.rebuy_stack = rebuy_stack
 
-    def set_counts(self, *, total_entries: int | None = None,
+    def set_counts(self, *, entries: int | None = None,
                    players_remaining: int | None = None,
-                   early_bird_count: int | None = None) -> None:
-        for name, value in (("total_entries", total_entries),
+                   early_bird_count: int | None = None,
+                   rebuy_count: int | None = None) -> None:
+        for name, value in (("entries", entries),
                             ("players_remaining", players_remaining),
-                            ("early_bird_count", early_bird_count)):
+                            ("early_bird_count", early_bird_count),
+                            ("rebuy_count", rebuy_count)):
             if value is None:
                 continue
             if isinstance(value, bool) or not isinstance(value, int) or value < 0:
@@ -257,18 +277,23 @@ class TournamentState:
             "seconds_remaining": self.seconds_remaining,
             "buy_in": str(self.buy_in),
             "currency": self.currency,
-            "total_entries": self.total_entries,
+            "entries": self.entries,
             "players_remaining": self.players_remaining,
             "starting_stack": self.starting_stack,
             "early_bird_bonus": self.early_bird_bonus,
             "early_bird_count": self.early_bird_count,
+            "rebuy_price": str(self.rebuy_price),
+            "rebuy_stack": self.rebuy_stack,
+            "rebuy_count": self.rebuy_count,
             "payout_percentages": list(self.payout_percentages),
             "computed": self._computed(),
         }
 
     def _computed(self) -> dict:
-        pool = compute_prize_pool(self.total_entries, self.buy_in)
-        chips = compute_chips_in_play(self.total_entries, self.starting_stack,
+        pool = compute_prize_pool(self.entries, self.buy_in,
+                                  self.rebuy_count, self.rebuy_price)
+        chips = compute_chips_in_play(self.entries, self.starting_stack,
+                                      self.rebuy_count, self.rebuy_stack,
                                       self.early_bird_count, self.early_bird_bonus)
         current = self.structure[self.current_index] if self.structure else None
         next_entry = (self.structure[self.current_index + 1]
@@ -303,10 +328,13 @@ class TournamentState:
             seconds_remaining=data["seconds_remaining"],
             buy_in=Decimal(data["buy_in"]),
             currency=data["currency"],
-            total_entries=data["total_entries"],
+            entries=data["entries"],
             players_remaining=data["players_remaining"],
             starting_stack=data["starting_stack"],
             early_bird_bonus=data["early_bird_bonus"],
             early_bird_count=data["early_bird_count"],
+            rebuy_price=Decimal(data["rebuy_price"]),
+            rebuy_stack=data["rebuy_stack"],
+            rebuy_count=data["rebuy_count"],
             payout_percentages=list(data["payout_percentages"]),
         )
