@@ -8,6 +8,8 @@
   let currency = $state('');
   let stack = $state('');
   let bonus = $state('');
+  let rebuyPrice = $state('');
+  let rebuyStack = $state('');
   let seeded = false;
 
   $effect(() => {
@@ -17,6 +19,8 @@
       currency = s.currency;
       stack = String(s.starting_stack);
       bonus = String(s.early_bird_bonus);
+      rebuyPrice = s.rebuy_price;
+      rebuyStack = String(s.rebuy_stack);
     }
   });
 
@@ -26,6 +30,8 @@
       currency,
       starting_stack: parseInt(stack, 10) || 0,
       early_bird_bonus: parseInt(bonus, 10) || 0,
+      rebuy_price: rebuyPrice,
+      rebuy_stack: parseInt(rebuyStack, 10) || 0,
     });
   }
 
@@ -34,7 +40,8 @@
   }
 
   const countRows = [
-    ['total_entries', 'Entries (incl. rebuys)'],
+    ['entries', 'Entries'],
+    ['rebuy_count', 'Rebuys'],
     ['players_remaining', 'Players remaining'],
     ['early_bird_count', 'Early birds'],
   ];
@@ -47,6 +54,8 @@
     <label>Currency <input bind:value={currency} size="4" /></label>
     <label>Starting stack <input bind:value={stack} inputmode="numeric" /></label>
     <label>Early-bird chips <input bind:value={bonus} inputmode="numeric" /></label>
+    <label>Rebuy price <input bind:value={rebuyPrice} inputmode="decimal" /></label>
+    <label>Rebuy stack <input bind:value={rebuyStack} inputmode="numeric" /></label>
   </div>
   <div class="row"><button onclick={applyConfig}>Apply</button></div>
 
