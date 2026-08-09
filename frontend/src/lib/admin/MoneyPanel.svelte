@@ -90,6 +90,11 @@
     gap: 0.25rem;
     font-size: 0.85rem;
     color: #9ca3af;
+    min-width: 0;
+  }
+  .grid2 input {
+    width: 100%;
+    min-width: 0;
   }
   .count-row { justify-content: space-between; }
   .count-label { flex: 1; color: #9ca3af; }
