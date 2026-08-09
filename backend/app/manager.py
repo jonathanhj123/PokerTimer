@@ -18,7 +18,7 @@ def _require_int(payload: dict, key: str, *, allow_negative: bool = False) -> in
     if not allow_negative and value < 0:
         raise EngineError(f"{key} cannot be negative")
     # Mirrors _parse_decimal's magnitude bound: an unbounded int (e.g. a
-    # 4000-digit entries) gets committed to the DB and makes every
+    # 4000-digit entries count) gets committed to the DB and makes every
     # subsequent to_dict() do 4000-digit arithmetic. A billion is comically
     # beyond any realistic player count, chip stack, or index. Plain ints
     # don't have Decimal's context-bound abs() overflow hazard, so a normal

@@ -3,6 +3,8 @@
 **Date:** 2026-08-08
 **Status:** Approved pending final review
 
+> **Amended by:** `2026-08-08-poker-timer-rebuy-pricing-design.md` — `total_entries` below is renamed to `entries` (original buy-ins only) and rebuys now have their own price/stack. This file is kept as the historical Phase 1 record; read the amendment for current behavior.
+
 ## What this is
 
 A self-hosted tournament clock for a friend group's poker nights, in the spirit of the

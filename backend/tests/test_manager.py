@@ -435,6 +435,30 @@ def test_set_config_rejects_huge_finite_rebuy_price(clean_db):
     assert manager.state.rebuy_price == original_rebuy_price
 
 
+def test_set_config_rejects_absurdly_large_rebuy_stack(clean_db):
+    manager = make_manager()
+    admin = FakeWebSocket()
+    original_rebuy_stack = manager.state.rebuy_stack
+
+    asyncio.run(manager.handle_command(
+        admin, "set_config", {"rebuy_stack": 10**12}))
+
+    assert admin.sent[-1]["type"] == "error"
+    assert manager.state.rebuy_stack == original_rebuy_stack
+
+
+def test_set_counts_rejects_absurdly_large_rebuy_count(clean_db):
+    manager = make_manager()
+    admin = FakeWebSocket()
+    original_rebuy_count = manager.state.rebuy_count
+
+    asyncio.run(manager.handle_command(
+        admin, "set_counts", {"rebuy_count": 10**12}))
+
+    assert admin.sent[-1]["type"] == "error"
+    assert manager.state.rebuy_count == original_rebuy_count
+
+
 # --- Round 3 Minor #4: load_template must roll back a persist() failure --
 
 def test_load_template_rolls_back_structure_on_persist_failure(clean_db, monkeypatch):
