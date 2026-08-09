@@ -22,7 +22,7 @@ Requires Python 3.11+ and Node 18+.
 
 ## Poker night
 
-    .\start.ps1
+    npm start
 
 or, manually:
 

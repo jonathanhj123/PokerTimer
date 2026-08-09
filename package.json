@@ -1,0 +1,7 @@
+{
+  "name": "pokertimer",
+  "private": true,
+  "scripts": {
+    "start": "node scripts/start.js"
+  }
+}
