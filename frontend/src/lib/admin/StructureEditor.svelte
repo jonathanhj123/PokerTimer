@@ -1,19 +1,24 @@
 <script>
   import { conn, send } from '../connection.svelte.js';
+  import { mergeRows } from '../structure.js';
 
   const s = $derived(conn.state);
 
-  // Local editable copies. Reseed ONLY when the server structure itself
-  // changes — every-second tick broadcasts must not wipe in-progress edits.
+  // Local editable copies. Update ONLY when the server structure itself
+  // changes — every-second tick broadcasts must not wipe in-progress edits —
+  // and even then keep unsaved edits in rows the server didn't touch, so
+  // saving one row doesn't revert the others.
   let rows = $state([]);
   let serverKey = $state('');
+  let lastServer = [];
 
   $effect(() => {
     if (!s) return;
     const key = JSON.stringify(s.structure);
     if (key !== serverKey) {
       serverKey = key;
-      rows = s.structure.map((entry) => ({ ...entry }));
+      rows = mergeRows(rows, lastServer, s.structure);
+      lastServer = JSON.parse(key);
     }
   });
 
