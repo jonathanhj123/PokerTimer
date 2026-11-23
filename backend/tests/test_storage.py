@@ -57,3 +57,22 @@ def test_duplicate_template_name_raises(session):
     session.commit()
     with pytest.raises(ValueError):
         storage.create_template(session, "Friday", [level(50, 100)])
+
+
+def test_regulars_create_list_order_delete(session):
+    created = storage.create_regular(session, "  Tobias J. ")
+    storage.create_regular(session, "Anna B.")
+    session.commit()
+    assert created["name"] == "Tobias J."
+    assert [r["name"] for r in storage.list_regulars(session)] == ["Anna B.", "Tobias J."]
+    assert storage.delete_regular(session, created["id"]) is True
+    session.commit()
+    assert [r["name"] for r in storage.list_regulars(session)] == ["Anna B."]
+    assert storage.delete_regular(session, created["id"]) is False
+
+
+def test_regulars_reject_bad_and_duplicate_names(session):
+    storage.create_regular(session, "Anna B.")
+    for bad in ["anna b. ", "", "   ", "x" * 31]:
+        with pytest.raises(ValueError):
+            storage.create_regular(session, bad)

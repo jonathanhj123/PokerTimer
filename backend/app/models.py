@@ -15,3 +15,11 @@ class Snapshot(Base):
     __tablename__ = "snapshot"
     id: Mapped[int] = mapped_column(primary_key=True)  # always row 1
     state_json: Mapped[str] = mapped_column(Text)
+
+
+class Regular(Base):
+    """A saved player the host can add to tonight's list with one tap.
+    Lives outside the game snapshot so Reset never touches it."""
+    __tablename__ = "regulars"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(30), unique=True)

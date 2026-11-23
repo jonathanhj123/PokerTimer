@@ -17,12 +17,13 @@ import pytest  # noqa: E402
 @pytest.fixture
 def clean_db():
     from app.db import SessionLocal, init_db
-    from app.models import Snapshot, Template
+    from app.models import Regular, Snapshot, Template
 
     init_db()
     with SessionLocal() as session:
         session.query(Snapshot).delete()
         session.query(Template).delete()
+        session.query(Regular).delete()
         session.commit()
     yield
 

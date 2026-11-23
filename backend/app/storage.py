@@ -1,7 +1,7 @@
 """Persistence helpers. None of these commit — the caller owns the transaction."""
 import json
 
-from .models import Snapshot, Template
+from .models import Regular, Snapshot, Template
 
 
 def save_snapshot(session, state_dict: dict) -> None:
@@ -46,4 +46,30 @@ def delete_template(session, template_id: int) -> bool:
     if template is None:
         return False
     session.delete(template)
+    return True
+
+
+def list_regulars(session) -> list[dict]:
+    regulars = session.query(Regular).order_by(Regular.name).all()
+    return [{"id": r.id, "name": r.name} for r in regulars]
+
+
+def create_regular(session, name: str) -> dict:
+    name = name.strip()
+    if not 1 <= len(name) <= 30:
+        raise ValueError("Name must be 1-30 characters")
+    key = name.casefold()
+    if any(r.name.casefold() == key for r in session.query(Regular).all()):
+        raise ValueError(f"{name} is already a regular")
+    regular = Regular(name=name)
+    session.add(regular)
+    session.flush()  # assigns regular.id
+    return {"id": regular.id, "name": regular.name}
+
+
+def delete_regular(session, regular_id: int) -> bool:
+    regular = session.get(Regular, regular_id)
+    if regular is None:
+        return False
+    session.delete(regular)
     return True

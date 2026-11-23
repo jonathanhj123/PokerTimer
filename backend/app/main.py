@@ -9,7 +9,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
-from . import config, routes_auth, routes_templates, ws
+from . import config, routes_auth, routes_regulars, routes_templates, ws
 from .db import init_db
 from .manager import manager
 
@@ -47,6 +47,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title="PokerTimer", lifespan=lifespan)
 app.include_router(routes_auth.router)
 app.include_router(routes_templates.router)
+app.include_router(routes_regulars.router)
 app.include_router(ws.router)
 
 
