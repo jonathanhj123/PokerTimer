@@ -1,5 +1,6 @@
 """Pure tournament state machine and money math. No I/O here —
 persistence and broadcasting live in manager.py."""
+import random
 from dataclasses import dataclass, field
 from decimal import Decimal
 
@@ -51,6 +52,14 @@ class TournamentState:
     rebuy_stack: int = 0
     rebuy_count: int = 0
     payout_percentages: list[int] = field(default_factory=lambda: [50, 30, 20])
+    # each player: {"name": str, "table": int | None, "seat": int | None}
+    players: list[dict] = field(default_factory=list)
+    table_count: int = 1
+    seats_per_table: int = 9
+    show_seating: bool = False
+    # not serialized; tests swap in a seeded random.Random
+    rng: random.Random = field(default_factory=random.SystemRandom,
+                               repr=False, compare=False)
 
     # --- lifecycle -----------------------------------------------------
     def start(self) -> None:
@@ -79,8 +88,10 @@ class TournamentState:
 
     def reset(self) -> None:
         # structure, buy_in, currency, starting_stack, early_bird_bonus,
-        # rebuy_price, rebuy_stack and payout_percentages survive a reset so
-        # the next game starts configured
+        # rebuy_price, rebuy_stack, payout_percentages, table_count and
+        # seats_per_table survive a reset so the next game starts configured
+        self.players = []
+        self.show_seating = False
         self.status = "setup"
         self.current_index = 0
         self.seconds_remaining = 0
@@ -268,6 +279,29 @@ class TournamentState:
             raise EngineError(f"Percentages must sum to 100 (currently {sum(percentages)})")
         self.payout_percentages = list(percentages)
 
+    # --- seating -------------------------------------------------------
+    @staticmethod
+    def _check_layout(table_count, seats_per_table) -> None:
+        for label, value in (("Tables", table_count),
+                             ("Seats per table", seats_per_table)):
+            if isinstance(value, bool) or not isinstance(value, int) or value < 1:
+                raise EngineError(f"{label} must be a whole number of at least 1")
+
+    def set_seating_config(self, table_count: int, seats_per_table: int) -> None:
+        self._check_layout(table_count, seats_per_table)
+        if any(p["table"] is not None
+               and (p["table"] > table_count or p["seat"] > seats_per_table)
+               for p in self.players):
+            raise EngineError(
+                "Some players are seated outside that layout — redraw instead")
+        self.table_count = table_count
+        self.seats_per_table = seats_per_table
+
+    def set_show_seating(self, show: bool) -> None:
+        if not isinstance(show, bool):
+            raise EngineError("show must be true or false")
+        self.show_seating = show
+
     # --- serialization -------------------------------------------------
     def to_dict(self) -> dict:
         return {
@@ -286,6 +320,10 @@ class TournamentState:
             "rebuy_stack": self.rebuy_stack,
             "rebuy_count": self.rebuy_count,
             "payout_percentages": list(self.payout_percentages),
+            "players": [dict(p) for p in self.players],
+            "table_count": self.table_count,
+            "seats_per_table": self.seats_per_table,
+            "show_seating": self.show_seating,
             "computed": self._computed(),
         }
 
@@ -337,4 +375,9 @@ class TournamentState:
             rebuy_stack=data["rebuy_stack"],
             rebuy_count=data["rebuy_count"],
             payout_percentages=list(data["payout_percentages"]),
+            # .get: snapshots saved before seating existed lack these keys
+            players=[dict(p) for p in data.get("players", [])],
+            table_count=data.get("table_count", 1),
+            seats_per_table=data.get("seats_per_table", 9),
+            show_seating=data.get("show_seating", False),
         )
