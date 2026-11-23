@@ -10,5 +10,6 @@ export function seatingTables(players, tableCount, seatsPerTable) {
     tables.push({ table, seats });
   }
   const unseated = players.filter((p) => p.table == null).map((p) => p.name);
-  return { tables, unseated };
+  const drawn = players.some((p) => p.table != null);
+  return { tables, unseated, drawn };
 }

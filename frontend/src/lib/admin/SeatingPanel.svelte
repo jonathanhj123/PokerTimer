@@ -6,15 +6,34 @@
   let tables = $state('');
   let seats = $state('');
   let newName = $state('');
-  let seeded = false;
+  // Plain (non-reactive) flag: while an input has focus, don't overwrite
+  // what the admin is typing with the server's value.
+  let editing = false;
 
+  // Follow the server's layout (another admin may change it), and snap back
+  // to it when a change is rejected (lastError).
   $effect(() => {
-    if (s && !seeded) {
-      seeded = true;
-      tables = String(s.table_count);
-      seats = String(s.seats_per_table);
+    const tableCount = s.table_count;
+    const seatCount = s.seats_per_table;
+    conn.lastError;
+    if (!editing) {
+      tables = String(tableCount);
+      seats = String(seatCount);
     }
   });
+
+  function layout() {
+    return {
+      table_count: parseInt(tables, 10) || 0,
+      seats_per_table: parseInt(seats, 10) || 0,
+    };
+  }
+
+  // Lets a host add a table mid-game for late joiners without a redraw.
+  function applyLayout() {
+    editing = false;
+    send('set_seating_config', layout());
+  }
 
   const anySeated = $derived(s.players.some((p) => p.table !== null));
 
@@ -28,18 +47,23 @@
 
   function draw() {
     if (anySeated && !confirm("Redraw everyone's seats?")) return;
-    send('draw_seats', {
-      table_count: parseInt(tables, 10) || 0,
-      seats_per_table: parseInt(seats, 10) || 0,
-    });
+    send('draw_seats', layout());
   }
 </script>
 
 <section class="panel">
   <h3>Seating</h3>
   <div class="grid2">
-    <label>Tables <input bind:value={tables} inputmode="numeric" /></label>
-    <label>Seats per table <input bind:value={seats} inputmode="numeric" /></label>
+    <label>Tables
+      <input bind:value={tables} inputmode="numeric"
+             onfocus={() => (editing = true)} onchange={applyLayout}
+             onblur={() => (editing = false)} />
+    </label>
+    <label>Seats per table
+      <input bind:value={seats} inputmode="numeric"
+             onfocus={() => (editing = true)} onchange={applyLayout}
+             onblur={() => (editing = false)} />
+    </label>
   </div>
 
   <form class="row" onsubmit={addPlayer}>

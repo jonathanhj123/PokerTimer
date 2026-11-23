@@ -29,26 +29,34 @@
 {#if !s}
   <main class="screen center"><p class="muted">Connecting…</p></main>
 {:else if s.show_seating}
-  <main class="screen seating-screen">
+  <main class="screen seating-screen"
+        style="font-size: min(2.6vw, {Math.min(5, 70 / (s.seats_per_table + 3)).toFixed(2)}vh)">
     {#if s.status === 'running' || s.status === 'paused'}
       <div class="corner-clock">{formatClock(s.seconds_remaining)}</div>
     {/if}
     <h1 class="seating-title">SEATING</h1>
-    <div class="seating-grid" style="grid-template-columns: repeat({s.table_count}, minmax(0, 1fr))">
-      {#each seating.tables as t (t.table)}
-        <div class="seating-table">
-          <div class="table-name">Table {t.table}</div>
-          {#each t.seats as spot (spot.seat)}
-            <div class="seat-row" class:empty={!spot.name}>
-              <span class="seat-num">{spot.seat}</span>
-              <span class="seat-name">{spot.name ?? '—'}</span>
-            </div>
-          {/each}
-        </div>
-      {/each}
-    </div>
-    {#if seating.unseated.length > 0}
-      <p class="unseated">Not seated yet: {seating.unseated.join(', ')}</p>
+    {#if !seating.drawn}
+      <p class="predraw-note">Seats not drawn yet</p>
+      <div class="predraw-names">
+        {#each s.players as player (player.name)}<span>{player.name}</span>{/each}
+      </div>
+    {:else}
+      <div class="seating-grid" style="grid-template-columns: repeat({s.table_count}, minmax(0, 1fr))">
+        {#each seating.tables as t (t.table)}
+          <div class="seating-table">
+            <div class="table-name">Table {t.table}</div>
+            {#each t.seats as spot (spot.seat)}
+              <div class="seat-row" class:empty={!spot.name}>
+                <span class="seat-num">{spot.seat}</span>
+                <span class="seat-name">{spot.name ?? '—'}</span>
+              </div>
+            {/each}
+          </div>
+        {/each}
+      </div>
+      {#if seating.unseated.length > 0}
+        <p class="unseated">Not seated yet: {seating.unseated.join(', ')}</p>
+      {/if}
     {/if}
   </main>
 {:else if s.status === 'setup'}
@@ -211,7 +219,15 @@
     justify-content: flex-start;
     padding: 4vh 4vw;
     box-sizing: border-box;
-    font-size: min(2.6vw, 5vh);
+  }
+  .predraw-note { text-align: center; color: #fbbf24; margin: 0 0 1em; }
+  .predraw-names {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 0.4em 1.6em;
+    font-size: 1.4em;
+    font-weight: 600;
   }
   .seating-title {
     text-align: center;

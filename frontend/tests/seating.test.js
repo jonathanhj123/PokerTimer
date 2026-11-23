@@ -17,4 +17,10 @@ describe('seatingTables', () => {
       [{ name: 'Anna', table: null, seat: null }, { name: 'Mads', table: null, seat: null }], 1, 9);
     expect(unseated).toEqual(['Anna', 'Mads']);
   });
+
+  it('reports whether a draw has happened', () => {
+    expect(seatingTables([{ name: 'Anna', table: null, seat: null }], 1, 9).drawn).toBe(false);
+    expect(seatingTables([{ name: 'Anna', table: 1, seat: 4 }], 1, 9).drawn).toBe(true);
+    expect(seatingTables([], 1, 9).drawn).toBe(false);
+  });
 });

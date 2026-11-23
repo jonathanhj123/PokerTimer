@@ -6,6 +6,7 @@ from decimal import Decimal
 
 LEVEL = "level"
 BREAK = "break"
+MAX_LAYOUT = 20  # max tables, and max seats per table
 
 
 class EngineError(ValueError):
@@ -286,6 +287,9 @@ class TournamentState:
                              ("Seats per table", seats_per_table)):
             if isinstance(value, bool) or not isinstance(value, int) or value < 1:
                 raise EngineError(f"{label} must be a whole number of at least 1")
+            # a typo like 90000 would otherwise build a 90000-column TV grid
+            if value > MAX_LAYOUT:
+                raise EngineError(f"{label} can be at most {MAX_LAYOUT}")
 
     def set_seating_config(self, table_count: int, seats_per_table: int) -> None:
         self._check_layout(table_count, seats_per_table)

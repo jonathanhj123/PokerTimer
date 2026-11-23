@@ -162,3 +162,15 @@ def test_late_joiner_when_full_fails_without_counting():
     with pytest.raises(EngineError, match="No empty seats"):
         s.add_player("Late")
     assert len(s.players) == 2 and s.entries == 2
+
+
+def test_layout_is_capped():
+    s = seeded()
+    s.add_player("Anna")
+    for bad in [(21, 9), (2, 21)]:
+        with pytest.raises(EngineError):
+            s.set_seating_config(*bad)
+        with pytest.raises(EngineError):
+            s.draw_seats(*bad)
+    s.draw_seats(20, 20)
+    assert (s.table_count, s.seats_per_table) == (20, 20)
