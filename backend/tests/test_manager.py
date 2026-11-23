@@ -482,3 +482,34 @@ def test_load_template_rolls_back_structure_on_persist_failure(clean_db, monkeyp
     asyncio.run(run())
 
     assert manager.state.structure == original_structure
+
+
+def test_seating_commands_roundtrip(clean_db):
+    manager = make_manager()
+    admin = FakeWebSocket()
+    manager.clients = [admin]
+    for name in ["Anna", "Mads", "Sofie"]:
+        asyncio.run(manager.handle_command(admin, "add_player", {"name": name}))
+    asyncio.run(manager.handle_command(admin, "draw_seats",
+                                       {"table_count": 2, "seats_per_table": 9}))
+    asyncio.run(manager.handle_command(admin, "set_show_seating", {"show": True}))
+    state = admin.sent[-1]["state"]
+    assert admin.sent[-1]["type"] == "state"
+    assert state["show_seating"] is True and state["entries"] == 3
+    assert all(p["table"] in (1, 2) for p in state["players"])
+
+    asyncio.run(manager.handle_command(admin, "remove_player", {"name": "Anna"}))
+    asyncio.run(manager.handle_command(admin, "set_seating_config",
+                                       {"table_count": 3, "seats_per_table": 9}))
+    state = admin.sent[-1]["state"]
+    assert [p["name"] for p in state["players"]] == ["Mads", "Sofie"]
+    assert state["table_count"] == 3
+
+
+def test_seating_command_bad_payload_is_error(clean_db):
+    manager = make_manager()
+    admin = FakeWebSocket()
+    asyncio.run(manager.handle_command(admin, "draw_seats", {"table_count": "2"}))
+    asyncio.run(manager.handle_command(admin, "set_show_seating", {}))
+    assert [m["type"] for m in admin.sent] == ["error", "error"]
+    assert manager.state.players == []

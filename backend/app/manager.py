@@ -289,6 +289,19 @@ class TournamentManager:
             if not isinstance(percentages, list):
                 raise EngineError("percentages must be a list")
             s.set_payouts(percentages)
+        elif action == "add_player":
+            s.add_player(p.get("name"))
+        elif action == "remove_player":
+            s.remove_player(p.get("name"))
+        elif action == "draw_seats":
+            s.draw_seats(_require_int(p, "table_count"),
+                         _require_int(p, "seats_per_table"))
+        elif action == "set_seating_config":
+            s.set_seating_config(_require_int(p, "table_count"),
+                                 _require_int(p, "seats_per_table"))
+        elif action == "set_show_seating":
+            # engine rejects anything that isn't a real bool
+            s.set_show_seating(p.get("show"))
         else:
             raise EngineError(f"Unknown command: {action}")
 
