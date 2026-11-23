@@ -37,6 +37,12 @@
     send('update_entry', { index: i, entry: toEntry(rows[i]) });
   }
 
+  const dirtyCount = $derived(rows.filter((_, i) => isDirty(i)).length);
+
+  function saveAll() {
+    rows.forEach((_, i) => { if (isDirty(i)) saveRow(i); });
+  }
+
   function addLevel() {
     const last = [...s.structure].reverse().find((e) => e.type === 'level');
     const entry = last
@@ -53,13 +59,20 @@
 </script>
 
 <section class="panel wide">
-  <h3>Blind structure</h3>
+  <div class="head">
+    <h3>Blind structure</h3>
+    {#if dirtyCount > 0}
+      <button class="primary" onclick={saveAll}>
+        Save all changes ({dirtyCount})
+      </button>
+    {/if}
+  </div>
   <div class="table">
     <div class="thead">
       <span></span><span>SB</span><span>BB</span><span>Ante</span><span>Min</span><span></span>
     </div>
     {#each rows as row, i}
-      <div class="trow" class:current={i === s.current_index && s.status !== 'setup'}>
+      <div class="trow" class:dirty={isDirty(i)} class:current={i === s.current_index && s.status !== 'setup'}>
         <span class="num">{i + 1}</span>
         {#if row.type === 'level'}
           <input inputmode="numeric" bind:value={row.sb} />
@@ -72,13 +85,14 @@
           <input inputmode="numeric" bind:value={row.minutes} />
         {/if}
         <span class="actions">
-          {#if isDirty(i)}<button class="save" onclick={() => saveRow(i)}>Save</button>{/if}
           <button onclick={() => send('move_entry', { from_index: i, to_index: i - 1 })}
                   disabled={i === 0}>↑</button>
           <button onclick={() => send('move_entry', { from_index: i, to_index: i + 1 })}
                   disabled={i === rows.length - 1}>↓</button>
           <button onclick={() => send('delete_entry', { index: i })}
                   disabled={rows.length === 1}>✕</button>
+          <button class="primary save" class:hidden={!isDirty(i)}
+                  onclick={() => saveRow(i)}>Save</button>
         </span>
       </div>
     {/each}
@@ -90,11 +104,12 @@
 </section>
 
 <style>
-  .wide { grid-column: 1 / -1; }
+  .head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.9rem; }
+  .head h3 { margin: 0; }
   .table { display: flex; flex-direction: column; gap: 0.3rem; margin-bottom: 0.8rem; }
   .thead, .trow {
     display: grid;
-    grid-template-columns: 2rem 1fr 1fr 1fr 1fr auto;
+    grid-template-columns: 2rem repeat(4, minmax(3.5rem, 8rem)) auto;
     gap: 0.4rem;
     align-items: center;
   }
@@ -104,5 +119,7 @@
   .num { color: #7b8794; text-align: right; }
   .break-cell { color: #fbbf24; font-size: 0.85rem; }
   .actions { display: flex; gap: 0.25rem; }
-  .actions .save { background: #166534; border-color: #166534; }
+  /* Save keeps its space when hidden so the row's buttons don't jump */
+  .actions .hidden { visibility: hidden; }
+  .trow.dirty input { border-color: #a16207; }
 </style>

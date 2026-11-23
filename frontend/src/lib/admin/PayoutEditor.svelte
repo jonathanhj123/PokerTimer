@@ -36,7 +36,7 @@
   <div class="row">
     <button onclick={() => (draft = [...draft, 1])}>+ Add place</button>
     <span class="total" class:bad={total !== 100}>Total: {total}%</span>
-    <button disabled={total !== 100} onclick={apply}>Apply</button>
+    <button class="primary" disabled={total !== 100} onclick={apply}>Apply</button>
   </div>
 </section>
 

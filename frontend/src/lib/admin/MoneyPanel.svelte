@@ -55,7 +55,7 @@
 </script>
 
 <section class="panel">
-  <h3>Money & players</h3>
+  <h3>Money &amp; players</h3>
   <div class="grid2">
     <label>Buy-in <input bind:value={buyIn} inputmode="decimal" /></label>
     <label>Currency <input bind:value={currency} size="4" /></label>
@@ -64,7 +64,7 @@
     <label>Rebuy price <input bind:value={rebuyPrice} inputmode="decimal" /></label>
     <label>Rebuy stack <input bind:value={rebuyStack} inputmode="numeric" /></label>
   </div>
-  <div class="row"><button onclick={applyConfig}>Apply</button></div>
+  <div class="row"><button class="primary" onclick={applyConfig}>Apply</button></div>
 
   {#each countRows as [field, label]}
     <div class="row count-row">

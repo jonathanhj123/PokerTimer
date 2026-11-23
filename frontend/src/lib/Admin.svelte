@@ -67,14 +67,23 @@
       {#if !conn.connected}<span class="badge bad">reconnecting…</span>
       {:else}<span class="badge ok">live</span>{/if}
     </header>
-    <div class="panels">
-      <ClockControls />
-      <MoneyPanel />
-      <SeatingPanel />
-      <PayoutEditor />
-      <TemplateBar />
-      <StructureEditor />
+    <!-- Packed columns: each column stacks its panels with no gaps. On a
+         phone the columns dissolve (display: contents) and `order` puts the
+         game-night panels first. -->
+    <div class="columns">
+      <div class="col">
+        <div class="slot" style="order: 1"><ClockControls /></div>
+        <div class="slot" style="order: 4"><PayoutEditor /></div>
+      </div>
+      <div class="col">
+        <div class="slot" style="order: 3"><MoneyPanel /></div>
+        <div class="slot" style="order: 5"><TemplateBar /></div>
+      </div>
+      <div class="col">
+        <div class="slot" style="order: 2"><SeatingPanel /></div>
+      </div>
     </div>
+    <div class="full"><StructureEditor /></div>
   </main>
 {/if}
 
@@ -106,7 +115,7 @@
   }
   .login-card button { background: #166534; border-color: #166534; }
 
-  .admin { padding: 1rem; max-width: 1100px; margin: 0 auto; }
+  .admin { padding: 1rem; max-width: 1200px; margin: 0 auto; }
   .topbar {
     display: flex;
     justify-content: space-between;
@@ -117,11 +126,17 @@
   .badge.ok { background: #14532d; color: #86efac; }
   .badge.bad { background: #7f1d1d; color: #fecaca; }
 
-  .panels {
+  .columns {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+    grid-template-columns: repeat(3, minmax(0, 1fr));
     gap: 1rem;
     align-items: start;
+  }
+  .col { display: flex; flex-direction: column; gap: 1rem; min-width: 0; }
+  .full { margin-top: 1rem; }
+  @media (max-width: 900px) {
+    .columns { display: flex; flex-direction: column; }
+    .col { display: contents; }
   }
 
   .toast {
@@ -138,10 +153,18 @@
 
   :global(.panel) {
     background: #111827;
+    border: 1px solid #1f2937;
     border-radius: 12px;
-    padding: 1rem;
+    padding: 1rem 1.1rem;
   }
-  :global(.panel h3) { margin: 0 0 0.8rem; font-size: 1rem; color: #9ca3af; }
+  :global(.panel h3) {
+    margin: 0 0 0.9rem;
+    font-size: 0.8rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: #e5e7eb;
+  }
   :global(.panel .row) {
     display: flex;
     flex-wrap: wrap;
@@ -149,14 +172,21 @@
     align-items: center;
     margin-bottom: 0.6rem;
   }
+  :global(.panel .row:last-child) { margin-bottom: 0; }
   :global(.panel button) {
     background: #1f2937;
     color: #e8edf2;
     border: 1px solid #374151;
     border-radius: 8px;
     padding: 0.45rem 0.9rem;
-    font-size: 0.95rem;
+    font-size: 0.9rem;
+    cursor: pointer;
+    transition: background 0.12s, border-color 0.12s;
   }
+  :global(.panel button:hover:not(:disabled)) { background: #273244; border-color: #4b5563; }
+  :global(.panel button.primary) { background: #166534; border-color: #15803d; font-weight: 600; }
+  :global(.panel button.primary:hover:not(:disabled)) { background: #15803d; }
+  :global(.panel button.danger) { border-color: #7f1d1d; color: #fca5a5; }
   :global(.panel button:disabled) { opacity: 0.4; cursor: not-allowed; }
   :global(.panel input), :global(.panel select) {
     background: #0b0f14;
@@ -165,5 +195,9 @@
     border-radius: 8px;
     padding: 0.45rem 0.6rem;
     font-size: 0.95rem;
+  }
+  :global(.panel input:focus), :global(.panel select:focus) {
+    outline: none;
+    border-color: #22c55e;
   }
 </style>

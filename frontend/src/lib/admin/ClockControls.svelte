@@ -22,15 +22,15 @@
   </div>
   <div class="row">
     {#if s.status === 'setup'}
-      <button onclick={() => send('start')} disabled={s.structure.length === 0}>
+      <button class="primary" onclick={() => send('start')} disabled={s.structure.length === 0}>
         Start tournament
       </button>
     {/if}
     {#if s.status === 'running'}<button onclick={() => send('pause')}>Pause</button>{/if}
-    {#if s.status === 'paused'}<button onclick={() => send('resume')}>Resume</button>{/if}
-    {#if active}<button onclick={() => send('end')}>End</button>{/if}
+    {#if s.status === 'paused'}<button class="primary" onclick={() => send('resume')}>Resume</button>{/if}
+    {#if active}<button class="danger" onclick={() => send('end')}>End</button>{/if}
     {#if s.status === 'finished'}
-      <button onclick={() => send('reset')}>Reset for next game</button>
+      <button class="primary" onclick={() => send('reset')}>Reset for next game</button>
     {/if}
   </div>
   {#if active}

@@ -136,7 +136,7 @@
 
   <form class="row" onsubmit={addPlayer}>
     <input class="name-input" bind:value={newName} placeholder="Player name" maxlength="30" />
-    <button type="submit">Add</button>
+    <button class="primary" type="submit">Add</button>
   </form>
 
   {#if s.players.length > 0}
@@ -161,7 +161,7 @@
   {/if}
 
   <div class="row">
-    <button onclick={draw} disabled={s.players.length === 0}>
+    <button class="primary" onclick={draw} disabled={s.players.length === 0}>
       {anySeated ? 'Redraw seats' : 'Draw seats'}
     </button>
     <button class:on={s.show_seating}

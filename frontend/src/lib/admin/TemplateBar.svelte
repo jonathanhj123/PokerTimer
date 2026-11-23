@@ -66,10 +66,10 @@
         <option value={template.id}>{template.name}</option>
       {/each}
     </select>
-    <button onclick={loadTemplate} disabled={!selected || s.status !== 'setup'}>
+    <button class="primary" onclick={loadTemplate} disabled={!selected || s.status !== 'setup'}>
       Load
     </button>
-    <button onclick={removeTemplate} disabled={!selected}>Delete</button>
+    <button class="danger" onclick={removeTemplate} disabled={!selected}>Delete</button>
   </div>
   {#if s.status !== 'setup'}
     <p class="hint">Templates can only be loaded during setup.</p>
