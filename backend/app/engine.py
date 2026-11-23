@@ -297,6 +297,71 @@ class TournamentState:
         self.table_count = table_count
         self.seats_per_table = seats_per_table
 
+    def _find_player(self, name) -> int | None:
+        key = name.strip().casefold()
+        return next((i for i, p in enumerate(self.players)
+                     if p["name"].casefold() == key), None)
+
+    def _pick_late_seat(self) -> tuple[int, int]:
+        taken = {t: set() for t in range(1, self.table_count + 1)}
+        for p in self.players:
+            if p["table"] is not None:
+                taken[p["table"]].add(p["seat"])
+        open_tables = [t for t, seats in taken.items()
+                       if len(seats) < self.seats_per_table]
+        if not open_tables:
+            raise EngineError("No empty seats — add a table or redraw")
+        fewest = min(len(taken[t]) for t in open_tables)
+        table = self.rng.choice([t for t in open_tables if len(taken[t]) == fewest])
+        empty = [n for n in range(1, self.seats_per_table + 1) if n not in taken[table]]
+        return table, self.rng.choice(empty)
+
+    def add_player(self, name: str) -> None:
+        if not isinstance(name, str):
+            raise EngineError("Name must be text")
+        name = name.strip()
+        if not 1 <= len(name) <= 30:
+            raise EngineError("Name must be 1-30 characters")
+        if self._find_player(name) is not None:
+            raise EngineError(f"{name} is already on the list")
+        table = seat = None
+        if any(p["table"] is not None for p in self.players):
+            table, seat = self._pick_late_seat()
+        self.players.append({"name": name, "table": table, "seat": seat})
+        self.entries += 1
+        self.players_remaining += 1
+
+    def remove_player(self, name: str) -> None:
+        if not isinstance(name, str):
+            raise EngineError("Name must be text")
+        index = self._find_player(name)
+        if index is None:
+            raise EngineError(f"No player named {name.strip()}")
+        del self.players[index]
+        self.entries = max(0, self.entries - 1)
+        self.players_remaining = max(0, self.players_remaining - 1)
+
+    def draw_seats(self, table_count: int, seats_per_table: int) -> None:
+        self._check_layout(table_count, seats_per_table)
+        if not self.players:
+            raise EngineError("Add players before drawing")
+        if len(self.players) > table_count * seats_per_table:
+            raise EngineError(
+                f"{len(self.players)} players don't fit at "
+                f"{table_count} × {seats_per_table} seats")
+        self.table_count = table_count
+        self.seats_per_table = seats_per_table
+        order = list(range(len(self.players)))
+        self.rng.shuffle(order)
+        by_table = {t: [] for t in range(1, table_count + 1)}
+        for i, idx in enumerate(order):
+            by_table[i % table_count + 1].append(idx)
+        for table, idxs in by_table.items():
+            seats = self.rng.sample(range(1, seats_per_table + 1), len(idxs))
+            for idx, seat in zip(idxs, seats):
+                self.players[idx]["table"] = table
+                self.players[idx]["seat"] = seat
+
     def set_show_seating(self, show: bool) -> None:
         if not isinstance(show, bool):
             raise EngineError("show must be true or false")
