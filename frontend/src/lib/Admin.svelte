@@ -3,6 +3,7 @@
   import { conn, connect } from './connection.svelte.js';
   import ClockControls from './admin/ClockControls.svelte';
   import MoneyPanel from './admin/MoneyPanel.svelte';
+  import SeatingPanel from './admin/SeatingPanel.svelte';
   import PayoutEditor from './admin/PayoutEditor.svelte';
   import StructureEditor from './admin/StructureEditor.svelte';
   import TemplateBar from './admin/TemplateBar.svelte';
@@ -69,6 +70,7 @@
     <div class="panels">
       <ClockControls />
       <MoneyPanel />
+      <SeatingPanel />
       <PayoutEditor />
       <TemplateBar />
       <StructureEditor />
