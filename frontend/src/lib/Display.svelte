@@ -2,6 +2,7 @@
   import { onMount } from 'svelte';
   import { conn, connect, enableSound } from './connection.svelte.js';
   import { formatChips, formatClock, formatMoney, ordinal } from './format.js';
+  import { seatingTables } from './seating.js';
 
   let flashing = $state(false);
   let flashTimer;
@@ -21,10 +22,35 @@
   const s = $derived(conn.state);
   const c = $derived(conn.state?.computed);
   const entry = $derived(conn.state?.computed?.current_entry);
+  const seating = $derived(
+    s ? seatingTables(s.players, s.table_count, s.seats_per_table) : null);
 </script>
 
 {#if !s}
   <main class="screen center"><p class="muted">Connecting…</p></main>
+{:else if s.show_seating}
+  <main class="screen seating-screen">
+    {#if s.status === 'running' || s.status === 'paused'}
+      <div class="corner-clock">{formatClock(s.seconds_remaining)}</div>
+    {/if}
+    <h1 class="seating-title">SEATING</h1>
+    <div class="seating-grid" style="grid-template-columns: repeat({s.table_count}, minmax(0, 1fr))">
+      {#each seating.tables as t (t.table)}
+        <div class="seating-table">
+          <div class="table-name">Table {t.table}</div>
+          {#each t.seats as spot (spot.seat)}
+            <div class="seat-row" class:empty={!spot.name}>
+              <span class="seat-num">{spot.seat}</span>
+              <span class="seat-name">{spot.name ?? '—'}</span>
+            </div>
+          {/each}
+        </div>
+      {/each}
+    </div>
+    {#if seating.unseated.length > 0}
+      <p class="unseated">Not seated yet: {seating.unseated.join(', ')}</p>
+    {/if}
+  </main>
 {:else if s.status === 'setup'}
   <main class="screen center">
     <h1 class="waiting-title">PokerTimer</h1>
@@ -180,6 +206,43 @@
   .pool-final { font-size: 3.5vw; font-weight: 700; margin: 0.2em 0 0.6em; }
   .payouts-final { display: flex; flex-direction: column; gap: 0.4em; }
   .final-row { font-size: 3vw; }
+
+  .seating-screen {
+    justify-content: flex-start;
+    padding: 4vh 4vw;
+    box-sizing: border-box;
+    font-size: min(2.6vw, 5vh);
+  }
+  .seating-title {
+    text-align: center;
+    letter-spacing: 0.2em;
+    color: #7b8794;
+    font-size: 1.3em;
+    margin: 0 0 0.8em;
+  }
+  .seating-grid { display: grid; gap: 3vw; }
+  .seating-table { min-width: 0; }
+  .table-name {
+    color: #4ade80;
+    font-weight: 700;
+    border-bottom: 1px solid #1f2937;
+    padding-bottom: 0.2em;
+    margin-bottom: 0.3em;
+  }
+  .seat-row { display: flex; gap: 0.8em; line-height: 1.45; }
+  .seat-num { color: #7b8794; min-width: 1.5em; text-align: right; font-variant-numeric: tabular-nums; }
+  .seat-name { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .seat-row.empty .seat-name { color: #374151; font-weight: 400; }
+  .unseated { color: #fbbf24; text-align: center; margin: 1em 0 0; font-size: 0.8em; }
+  .corner-clock {
+    position: absolute;
+    top: 3vh;
+    right: 3vw;
+    font-size: 1.4em;
+    font-weight: 800;
+    font-variant-numeric: tabular-nums;
+    color: #cbd5e1;
+  }
 
   .reconnect-badge {
     position: fixed;
