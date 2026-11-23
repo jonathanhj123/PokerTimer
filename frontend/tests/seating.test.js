@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { seatingTables } from '../src/lib/seating.js';
+import { isRegular, regularChips, seatingTables } from '../src/lib/seating.js';
 
 describe('seatingTables', () => {
   it('lays out seats per table with empties', () => {
@@ -22,5 +22,24 @@ describe('seatingTables', () => {
     expect(seatingTables([{ name: 'Anna', table: null, seat: null }], 1, 9).drawn).toBe(false);
     expect(seatingTables([{ name: 'Anna', table: 1, seat: 4 }], 1, 9).drawn).toBe(true);
     expect(seatingTables([], 1, 9).drawn).toBe(false);
+  });
+});
+
+describe('regularChips', () => {
+  it('marks regulars already playing tonight, ignoring case and spaces', () => {
+    const chips = regularChips(
+      [{ id: 1, name: 'Anna B.' }, { id: 2, name: 'Mads K.' }],
+      [{ name: 'anna b. ', table: null, seat: null }]);
+    expect(chips).toEqual([
+      { id: 1, name: 'Anna B.', playing: true },
+      { id: 2, name: 'Mads K.', playing: false },
+    ]);
+  });
+});
+
+describe('isRegular', () => {
+  it('matches names case-insensitively', () => {
+    expect(isRegular('ANNA B.', [{ id: 1, name: 'Anna B.' }])).toBe(true);
+    expect(isRegular('Sofie', [{ id: 1, name: 'Anna B.' }])).toBe(false);
   });
 });

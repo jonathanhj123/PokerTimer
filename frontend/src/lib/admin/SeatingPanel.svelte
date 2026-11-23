@@ -1,5 +1,7 @@
 <script>
+  import { onMount } from 'svelte';
   import { conn, send } from '../connection.svelte.js';
+  import { isRegular, regularChips } from '../seating.js';
 
   const s = $derived(conn.state);
 
@@ -49,6 +51,45 @@
     if (anySeated && !confirm("Redraw everyone's seats?")) return;
     send('draw_seats', layout());
   }
+
+  // --- saved regulars (REST, outside the game state so Reset keeps them) ---
+  let regulars = $state([]);
+  let editRegulars = $state(false);
+  let regularsMessage = $state('');
+  const chips = $derived(regularChips(regulars, s.players));
+
+  async function refreshRegulars() {
+    const response = await fetch('/api/regulars');
+    if (response.ok) {
+      regulars = await response.json();
+      regularsMessage = '';
+    } else {
+      regularsMessage = 'Failed to load regulars';
+    }
+  }
+  onMount(refreshRegulars);
+
+  async function saveRegular(name) {
+    const response = await fetch('/api/regulars', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name }),
+    });
+    if (!response.ok) {
+      regularsMessage = (await response.json()).detail || 'Failed to save regular';
+      return;
+    }
+    refreshRegulars();
+  }
+
+  async function deleteRegular(regular) {
+    const response = await fetch(`/api/regulars/${regular.id}`, { method: 'DELETE' });
+    if (!response.ok) {
+      regularsMessage = 'Failed to delete regular';
+      return;
+    }
+    refreshRegulars();
+  }
 </script>
 
 <section class="panel">
@@ -66,6 +107,33 @@
     </label>
   </div>
 
+  <div class="regulars-head">
+    <span>Regulars <span class="hint">— tap to add tonight</span></span>
+    {#if regulars.length > 0}
+      <button class="link" onclick={() => (editRegulars = !editRegulars)}>
+        {editRegulars ? 'Done' : 'Edit'}
+      </button>
+    {/if}
+  </div>
+  {#if regulars.length > 0}
+    <div class="chips">
+      {#each chips as chip (chip.id)}
+        {#if editRegulars}
+          <button class="chip editing" aria-label="Delete regular {chip.name}"
+                  onclick={() => deleteRegular(chip)}>{chip.name} ×</button>
+        {:else}
+          <button class="chip" class:playing={chip.playing} disabled={chip.playing}
+                  onclick={() => send('add_player', { name: chip.name })}>
+            {chip.playing ? '✓ ' : ''}{chip.name}
+          </button>
+        {/if}
+      {/each}
+    </div>
+  {:else}
+    <p class="muted">No regulars saved yet. Tap ☆ next to a player to save them.</p>
+  {/if}
+  {#if regularsMessage}<p class="error">{regularsMessage}</p>{/if}
+
   <form class="row" onsubmit={addPlayer}>
     <input class="name-input" bind:value={newName} placeholder="Player name" maxlength="30" />
     <button type="submit">Add</button>
@@ -79,6 +147,10 @@
           <span class="pseat">
             {player.table === null ? 'not seated' : `T${player.table} · S${player.seat}`}
           </span>
+          {#if !isRegular(player.name, regulars)}
+            <button class="remove" aria-label="Save {player.name} as a regular"
+                    title="Save as regular" onclick={() => saveRegular(player.name)}>☆</button>
+          {/if}
           <button class="remove" aria-label="Remove {player.name}"
                   onclick={() => send('remove_player', { name: player.name })}>×</button>
         </li>
@@ -135,4 +207,19 @@
   .remove { padding: 0.1rem 0.55rem; }
   .muted { color: #7b8794; margin: 0 0 0.6rem; font-size: 0.9rem; }
   .on { background: #166534; border-color: #166534; }
+  .regulars-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 0.85rem;
+    color: #9ca3af;
+    margin-bottom: 0.4rem;
+  }
+  .hint { color: #6b7280; }
+  .link { background: none !important; border: none !important; color: #60a5fa !important; padding: 0 !important; }
+  .chips { display: flex; flex-wrap: wrap; gap: 0.35rem; margin-bottom: 0.8rem; }
+  .chip { padding: 0.3rem 0.65rem !important; font-size: 0.85rem !important; border-radius: 999px !important; }
+  .chip.playing { opacity: 0.45; }
+  .chip.editing { border-color: #7f1d1d !important; color: #fecaca !important; }
+  .error { color: #f87171; margin: 0 0 0.6rem; font-size: 0.85rem; }
 </style>
